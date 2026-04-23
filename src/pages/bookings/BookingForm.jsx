@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { collection, doc, query, where, getDocs, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase.js';
 import { useAppContext } from '../../context/AppContext.jsx';
 import {
@@ -13,7 +13,7 @@ import {
 } from '../../utils/index.js';
 import toast from 'react-hot-toast';
 
-/* ─── Estado inicial del formulario ─── */
+/* ─── Initial form state ─── */
 const INITIAL_FORM = {
   awbInputPrefix: '', awbInputNumber: '',
   origin: '', destination: '',
@@ -34,14 +34,62 @@ const INITIAL_FORM = {
   osiGhaText: 'GHA: ', ffrRemarks: '', bookingStatus: 'NN', isFlown: false,
 };
 
-/* ─── Componente principal ─── */
-export default function BookingForm({ onSuccess }) {
+/* ─── Main component ─── */
+export default function BookingForm({ onSuccess, editingBooking = null }) {
+  const isEditMode = !!editingBooking;
   const {
     currentUserProfile, agentProfiles, shipperProfiles, consigneeProfiles,
     flightSchedules, iataAirportCodes, awbStockAllocations, rateTableEntries,
   } = useAppContext();
 
-  const [form, setForm] = useState(INITIAL_FORM);
+  // Build initial state from editing booking if provided
+  const buildFormFromBooking = (b) => ({
+    ...INITIAL_FORM,
+    awbInputPrefix: b.awbInputPrefix || '',
+    awbInputNumber: b.awbInputNumber || '',
+    origin: b.origin || '',
+    destination: b.destination || '',
+    pieces: b.pieces || '',
+    weightKg: b.weightKg || '',
+    natureOfGoods: b.natureOfGoods || '',
+    natureOfGoodsCustom: '',
+    selectedShcCode: b.selectedShcCode || '',
+    flightSegments: b.flightSegments || [],
+    dimensionLines: b.dimensionLines || [],
+    selectedShipperProfileId: b.selectedShipperProfileId || '',
+    shipperName: b.shipperName || '',
+    shipperStreet: b.shipperStreet || '',
+    shipperCity: b.shipperCity || '',
+    shipperZip: b.shipperZip || '',
+    shipperCountry: b.shipperCountry || '',
+    shipperContact: b.shipperContact || '',
+    selectedConsigneeProfileId: b.selectedConsigneeProfileId || '',
+    consigneeName: b.consigneeName || '',
+    consigneeStreet: b.consigneeStreet || '',
+    consigneeCity: b.consigneeCity || '',
+    consigneeZip: b.consigneeZip || '',
+    consigneeCountry: b.consigneeCountry || '',
+    consigneeContact: b.consigneeContact || '',
+    selectedAgentProfileId: b.selectedAgentProfileId || '',
+    agentNameDisplay: b.agent_details_name || '',
+    agentCassDisplay: b.agentIataCassNumber || '',
+    agentIdInput: b.agent_id || '',
+    agentAddressDisplay: b.agentAddress || '',
+    agentCityForFFR: b.agentCity || '',
+    currency: b.currency || 'EUR',
+    ratePerKg: b.ratePerKg || '0.00',
+    isRateOverridden: b.isRateOverridden || false,
+    otherCharges: b.otherCharges || [],
+    paymentType: b.paymentType || 'PPD',
+    ffrReference: b.ffrReference || '',
+    handlingInformation: b.handlingInformation || '',
+    osiGhaText: b.osiGhaText || 'GHA: ',
+    ffrRemarks: b.ffrRemarks || '',
+    bookingStatus: b.bookingStatus || 'NN',
+    isFlown: b.isFlown || false,
+  });
+
+  const [form, setForm] = useState(isEditMode ? buildFormFromBooking(editingBooking) : INITIAL_FORM);
   const [formError, setFormError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -53,10 +101,12 @@ export default function BookingForm({ onSuccess }) {
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target?.value ?? e }));
 
-  /* ── Cálculos automáticos ── */
+  /* ── Auto calculations ── */
   useEffect(() => {
-    const vol = calculateVolumeM3(form.dimensionLines);
-    const chg = calculateChargeableWeight(parseFloat(form.weightKg) || 0, vol);
+    const volStr = calculateVolumeM3(form.dimensionLines);
+    const chgStr = calculateChargeableWeight(form.weightKg, form.dimensionLines);
+    const vol = parseFloat(volStr) || 0;
+    const chg = parseFloat(chgStr) || 0;
     setDisplayVolumeM3(vol.toFixed(3));
     setDisplayChargeableWeightKg(chg.toFixed(1));
 
@@ -75,7 +125,7 @@ export default function BookingForm({ onSuccess }) {
   }, [form.weightKg, form.dimensionLines, form.origin, form.destination, form.currency,
       form.ratePerKg, form.isRateOverridden, form.otherCharges, form.selectedAgentProfileId, rateTableEntries]);
 
-  /* ── Seleccionar agente → auto-asignar AWB ── */
+  /* ── Select agent → auto-assign AWB ── */
   const handleAgentSelect = useCallback((agentId) => {
     const profile = agentProfiles?.find(p => p.id === agentId);
     if (!profile) {
@@ -114,12 +164,12 @@ export default function BookingForm({ onSuccess }) {
     if (!found) {
       updates.awbInputPrefix = '';
       updates.awbInputNumber = '';
-      setFormError(`No hay AWBs disponibles en stock para el agente ${profile.agentName}.`);
+      setFormError(`No AWBs available in stock for agent ${profile.agentName}.`);
     }
     setForm(f => ({ ...f, ...updates }));
   }, [agentProfiles, awbStockAllocations]);
 
-  /* ── Seleccionar shipper ── */
+  /* ── Select shipper ── */
   const handleShipperSelect = (id) => {
     const p = shipperProfiles?.find(s => s.id === id);
     if (!p) { setForm(f => ({ ...f, selectedShipperProfileId: '' })); return; }
@@ -132,7 +182,7 @@ export default function BookingForm({ onSuccess }) {
     }));
   };
 
-  /* ── Seleccionar consignee ── */
+  /* ── Select consignee ── */
   const handleConsigneeSelect = (id) => {
     const p = consigneeProfiles?.find(c => c.id === id);
     if (!p) { setForm(f => ({ ...f, selectedConsigneeProfileId: '' })); return; }
@@ -190,7 +240,7 @@ export default function BookingForm({ onSuccess }) {
     setFormError(null);
 
     const finalNog = form.natureOfGoods === 'OTH' ? form.natureOfGoodsCustom?.trim() : form.natureOfGoods;
-    if (!finalNog) { setFormError('Indica la naturaleza de la mercancía.'); return; }
+    if (!finalNog) { setFormError('Please specify the nature of goods.'); return; }
 
     const data = {
       awbInputPrefix: form.awbInputPrefix,
@@ -228,8 +278,6 @@ export default function BookingForm({ onSuccess }) {
       ffrRemarks: form.ffrRemarks,
       bookingStatus: form.bookingStatus,
       isFlown: form.isFlown,
-      createdAt: serverTimestamp(),
-      createdBy: currentUserProfile?.email || 'unknown',
     };
 
     const validationError = validateBookingData(data);
@@ -237,6 +285,22 @@ export default function BookingForm({ onSuccess }) {
 
     setIsSubmitting(true);
     try {
+      // ── EDIT MODE: simple updateDoc ──
+      if (isEditMode && editingBooking?.id) {
+        await updateDoc(doc(db, 'bookings', editingBooking.id), {
+          ...data,
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUserProfile?.email || 'unknown',
+        });
+        toast.success('Booking updated successfully.');
+        onSuccess?.();
+        return;
+      }
+
+      // ── CREATE MODE: transaction with AWB stock lock ──
+      data.createdAt = serverTimestamp();
+      data.createdBy = currentUserProfile?.email || 'unknown';
+
       const allocQuery = query(
         collection(db, 'awbStockAllocations'),
         where('prefix', '==', data.awbInputPrefix),
@@ -251,12 +315,12 @@ export default function BookingForm({ onSuccess }) {
           currentUsedAwbs = a.usedAwbs || [];
         }
       });
-      if (!allocId) throw new Error('No se encontró una asignación AWB válida para este agente.');
+      if (!allocId) throw new Error('No valid AWB allocation found for this agent.');
 
       await runTransaction(db, async (tx) => {
         const awbUsageRef = doc(db, 'awbUsage', data.awb);
         const awbUsageDoc = await tx.get(awbUsageRef);
-        if (awbUsageDoc.exists()) throw new Error(`El AWB ${data.awb} ya ha sido utilizado.`);
+        if (awbUsageDoc.exists()) throw new Error(`AWB ${data.awb} has already been used.`);
         const updatedUsed = [...currentUsedAwbs];
         if (!updatedUsed.includes(data.awbInputNumber)) updatedUsed.push(data.awbInputNumber);
         const newRef = doc(collection(db, 'bookings'));
@@ -265,14 +329,14 @@ export default function BookingForm({ onSuccess }) {
         tx.set(awbUsageRef, { bookingId: newRef.id });
       });
 
-      toast.success('Booking creado correctamente.');
+      toast.success('Booking created successfully.');
       setForm(INITIAL_FORM);
       setFormError(null);
       onSuccess?.();
     } catch (err) {
       console.error(err);
       setFormError(err.message);
-      toast.error('Error al crear el booking.');
+      toast.error(isEditMode ? 'Error updating booking.' : 'Error creating booking.');
     } finally {
       setIsSubmitting(false);
     }
@@ -285,9 +349,7 @@ export default function BookingForm({ onSuccess }) {
     return [];
   }, [iataAirportCodes]);
 
-  const S = { // section style
-    marginBottom: 'var(--space-6)',
-  };
+  const S = { marginBottom: 'var(--space-6)' };
 
   return (
     <form onSubmit={handleSubmit}>
@@ -302,24 +364,24 @@ export default function BookingForm({ onSuccess }) {
         </div>
       )}
 
-      {/* ── 1. AWB & AGENTE ── */}
+      {/* ── 1. AWB & AGENT ── */}
       <div className="card" style={S}>
-        <div className="card-header"><span className="card-title">AWB & Agente</span></div>
+        <div className="card-header"><span className="card-title">AWB & Agent</span></div>
         <div className="card-body">
           <div className="form-grid form-grid-3">
             <div className="form-group">
-              <label className="form-label required">Agente</label>
+              <label className="form-label required">Agent</label>
               <select className="form-select" value={form.selectedAgentProfileId} onChange={e => handleAgentSelect(e.target.value)}>
-                <option value="">Seleccionar agente…</option>
+                <option value="">Select agent…</option>
                 {(agentProfiles || []).map(a => <option key={a.id} value={a.id}>{a.agentName}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label required">Prefijo AWB</label>
+              <label className="form-label required">AWB Prefix</label>
               <input className="form-input font-mono" value={form.awbInputPrefix} onChange={set('awbInputPrefix')} placeholder="180" />
             </div>
             <div className="form-group">
-              <label className="form-label required">Número AWB</label>
+              <label className="form-label required">AWB Number</label>
               <input className="form-input font-mono" value={form.awbInputNumber} onChange={set('awbInputNumber')} placeholder="00000000" />
             </div>
           </div>
@@ -333,16 +395,16 @@ export default function BookingForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* ── 2. RUTA ── */}
+      {/* ── 2. ROUTE ── */}
       <div className="card" style={S}>
-        <div className="card-header"><span className="card-title">Ruta</span></div>
+        <div className="card-header"><span className="card-title">Route</span></div>
         <div className="card-body">
           <div className="form-grid form-grid-2">
             <div className="form-group">
-              <label className="form-label required">Origen (IATA)</label>
+              <label className="form-label required">Origin (IATA)</label>
               {airports.length > 0 ? (
                 <select className="form-select" value={form.origin} onChange={set('origin')}>
-                  <option value="">Seleccionar origen…</option>
+                  <option value="">Select origin…</option>
                   {airports.map(a => <option key={a.code} value={a.code}>{a.label}</option>)}
                 </select>
               ) : (
@@ -350,10 +412,10 @@ export default function BookingForm({ onSuccess }) {
               )}
             </div>
             <div className="form-group">
-              <label className="form-label required">Destino (IATA)</label>
+              <label className="form-label required">Destination (IATA)</label>
               {airports.length > 0 ? (
                 <select className="form-select" value={form.destination} onChange={set('destination')}>
-                  <option value="">Seleccionar destino…</option>
+                  <option value="">Select destination…</option>
                   {airports.map(a => <option key={a.code} value={a.code}>{a.label}</option>)}
                 </select>
               ) : (
@@ -364,74 +426,74 @@ export default function BookingForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* ── 3. MERCANCÍA ── */}
+      {/* ── 3. CARGO ── */}
       <div className="card" style={S}>
-        <div className="card-header"><span className="card-title">Mercancía</span></div>
+        <div className="card-header"><span className="card-title">Cargo</span></div>
         <div className="card-body">
           <div className="form-grid form-grid-4">
             <div className="form-group">
-              <label className="form-label required">Bultos (pcs)</label>
+              <label className="form-label required">Pieces (pcs)</label>
               <input type="number" className="form-input" value={form.pieces} onChange={set('pieces')} placeholder="0" min="1" />
             </div>
             <div className="form-group">
-              <label className="form-label required">Peso real (kg)</label>
+              <label className="form-label required">Actual weight (kg)</label>
               <input type="number" className="form-input" value={form.weightKg} onChange={set('weightKg')} placeholder="0.0" step="0.1" />
             </div>
             <div className="form-group">
-              <label className="form-label">Volumen (m³)</label>
+              <label className="form-label">Volume (m³)</label>
               <input className="form-input" value={displayVolumeM3} readOnly style={{ background: 'var(--color-gray-50)', color: 'var(--color-gray-500)' }} />
             </div>
             <div className="form-group">
-              <label className="form-label">Peso cobrable (kg)</label>
+              <label className="form-label">Chargeable weight (kg)</label>
               <input className="form-input" value={displayChargeableWeightKg} readOnly style={{ background: 'var(--color-gray-50)', color: 'var(--color-gray-500)' }} />
             </div>
           </div>
           <div className="form-grid form-grid-2" style={{ marginTop: 'var(--space-4)' }}>
             <div className="form-group">
-              <label className="form-label required">Naturaleza de la mercancía</label>
+              <label className="form-label required">Nature of goods</label>
               <select className="form-select" value={iataNatureOfGoodsData.some(n => n.description === form.natureOfGoods) ? iataNatureOfGoodsData.find(n => n.description === form.natureOfGoods)?.code : (form.natureOfGoods ? 'OTH' : '')}
                 onChange={e => {
                   const item = iataNatureOfGoodsData.find(n => n.code === e.target.value);
                   setForm(f => ({ ...f, natureOfGoods: item ? item.description : 'OTH', natureOfGoodsCustom: '' }));
                 }}>
-                <option value="">Seleccionar…</option>
+                <option value="">Select…</option>
                 {iataNatureOfGoodsData.map(n => <option key={n.code} value={n.code}>{n.description}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Código SHC</label>
+              <label className="form-label">SHC Code</label>
               <select className="form-select" value={form.selectedShcCode} onChange={set('selectedShcCode')}>
-                <option value="">Sin SHC</option>
+                <option value="">No SHC</option>
                 {shcCodeData.map(s => <option key={s.code} value={s.code}>{s.code} — {s.description}</option>)}
               </select>
             </div>
           </div>
           {(form.natureOfGoods === 'OTH' || !iataNatureOfGoodsData.some(n => n.description === form.natureOfGoods)) && form.natureOfGoods && (
             <div className="form-group" style={{ marginTop: 'var(--space-3)' }}>
-              <label className="form-label required">Especificar mercancía</label>
-              <input className="form-input" value={form.natureOfGoodsCustom} onChange={set('natureOfGoodsCustom')} placeholder="Describe la mercancía…" />
+              <label className="form-label required">Specify cargo</label>
+              <input className="form-input" value={form.natureOfGoodsCustom} onChange={set('natureOfGoodsCustom')} placeholder="Describe the cargo…" />
             </div>
           )}
         </div>
       </div>
 
-      {/* ── 4. DIMENSIONES ── */}
+      {/* ── 4. DIMENSIONS ── */}
       <div className="card" style={S}>
         <div className="card-header">
-          <span className="card-title">Dimensiones</span>
-          <button type="button" className="button button-secondary button-sm" onClick={addDim}>+ Añadir línea</button>
+          <span className="card-title">Dimensions</span>
+          <button type="button" className="button button-secondary button-sm" onClick={addDim}>+ Add row</button>
         </div>
         <div className="card-body">
           {form.dimensionLines.length === 0 ? (
-            <p style={{ color: 'var(--color-gray-400)', fontSize: 'var(--font-size-sm)' }}>Sin dimensiones añadidas. El volumen se calculará automáticamente.</p>
+            <p style={{ color: 'var(--color-gray-400)', fontSize: 'var(--font-size-sm)' }}>No dimensions added. Volume will be calculated automatically.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
               {form.dimensionLines.map((d, i) => (
                 <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 'var(--space-2)', alignItems: 'center' }}>
-                  <input className="form-input" value={d.pieces} onChange={e => updateDim(d.id, 'pieces', e.target.value)} placeholder="Bultos" type="number" min="1" />
-                  <input className="form-input" value={d.length} onChange={e => updateDim(d.id, 'length', e.target.value)} placeholder="Largo (cm)" type="number" />
-                  <input className="form-input" value={d.width} onChange={e => updateDim(d.id, 'width', e.target.value)} placeholder="Ancho (cm)" type="number" />
-                  <input className="form-input" value={d.height} onChange={e => updateDim(d.id, 'height', e.target.value)} placeholder="Alto (cm)" type="number" />
+                  <input className="form-input" value={d.pieces} onChange={e => updateDim(d.id, 'pieces', e.target.value)} placeholder="Pieces" type="number" min="1" />
+                  <input className="form-input" value={d.length} onChange={e => updateDim(d.id, 'length', e.target.value)} placeholder="Length (cm)" type="number" />
+                  <input className="form-input" value={d.width} onChange={e => updateDim(d.id, 'width', e.target.value)} placeholder="Width (cm)" type="number" />
+                  <input className="form-input" value={d.height} onChange={e => updateDim(d.id, 'height', e.target.value)} placeholder="Height (cm)" type="number" />
                   <button type="button" className="button button-danger button-sm button-icon" onClick={() => removeDim(d.id)}>✕</button>
                 </div>
               ))}
@@ -440,45 +502,45 @@ export default function BookingForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* ── 5. VUELOS ── */}
+      {/* ── 5. FLIGHT SEGMENTS ── */}
       <div className="card" style={S}>
         <div className="card-header">
-          <span className="card-title">Segmentos de vuelo</span>
-          <button type="button" className="button button-secondary button-sm" onClick={addFlight}>+ Añadir vuelo</button>
+          <span className="card-title">Flight Segments</span>
+          <button type="button" className="button button-secondary button-sm" onClick={addFlight}>+ Add flight</button>
         </div>
         <div className="card-body">
           {form.flightSegments.length === 0 ? (
-            <p style={{ color: 'var(--color-gray-400)', fontSize: 'var(--font-size-sm)' }}>Sin vuelos añadidos.</p>
+            <p style={{ color: 'var(--color-gray-400)', fontSize: 'var(--font-size-sm)' }}>No flights added.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               {form.flightSegments.map((seg, i) => (
                 <div key={seg.id} style={{ background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-600)' }}>SEGMENTO {i + 1}</span>
-                    <button type="button" className="button button-danger button-sm" onClick={() => removeFlight(seg.id)}>Eliminar</button>
+                    <span style={{ fontWeight: 600, fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-600)' }}>SEGMENT {i + 1}</span>
+                    <button type="button" className="button button-danger button-sm" onClick={() => removeFlight(seg.id)}>Remove</button>
                   </div>
                   <div className="form-grid form-grid-3">
                     <div className="form-group">
-                      <label className="form-label">Vuelo programado</label>
+                      <label className="form-label">Scheduled flight</label>
                       <select className="form-select" value={seg.flightScheduleId} onChange={e => updateFlight(seg.id, 'flightScheduleId', e.target.value)}>
                         <option value="">Manual…</option>
                         {(flightSchedules || []).map(fs => <option key={fs.id} value={fs.id}>{fs.flightNumber} — {fs.origin}→{fs.destination}</option>)}
                       </select>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Número de vuelo</label>
+                      <label className="form-label">Flight number</label>
                       <input className="form-input" value={seg.flightNumber} onChange={e => updateFlight(seg.id, 'flightNumber', e.target.value.toUpperCase())} placeholder="IB6251" />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Fecha salida</label>
+                      <label className="form-label">Departure date</label>
                       <input type="date" className="form-input" value={seg.departureDate} onChange={e => updateFlight(seg.id, 'departureDate', e.target.value)} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Origen</label>
+                      <label className="form-label">Origin</label>
                       <input className="form-input" value={seg.segmentOrigin} onChange={e => updateFlight(seg.id, 'segmentOrigin', e.target.value.toUpperCase())} placeholder="MAD" maxLength={3} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Destino</label>
+                      <label className="form-label">Destination</label>
                       <input className="form-input" value={seg.segmentDestination} onChange={e => updateFlight(seg.id, 'segmentDestination', e.target.value.toUpperCase())} placeholder="JFK" maxLength={3} />
                     </div>
                     <div className="form-group">
@@ -495,38 +557,38 @@ export default function BookingForm({ onSuccess }) {
 
       {/* ── 6. SHIPPER ── */}
       <div className="card" style={S}>
-        <div className="card-header"><span className="card-title">Shipper (Expedidor)</span></div>
+        <div className="card-header"><span className="card-title">Shipper</span></div>
         <div className="card-body">
           <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
-            <label className="form-label">Cargar desde perfil</label>
+            <label className="form-label">Load from profile</label>
             <select className="form-select" value={form.selectedShipperProfileId} onChange={e => handleShipperSelect(e.target.value)}>
-              <option value="">Entrada manual…</option>
+              <option value="">Manual entry…</option>
               {(shipperProfiles || []).map(s => <option key={s.id} value={s.id}>{s.shipperName}</option>)}
             </select>
           </div>
           <div className="form-grid form-grid-2">
             <div className="form-group">
-              <label className="form-label required">Nombre</label>
+              <label className="form-label required">Name</label>
               <input className="form-input" value={form.shipperName} onChange={set('shipperName')} />
             </div>
             <div className="form-group">
-              <label className="form-label">Contacto</label>
+              <label className="form-label">Contact</label>
               <input className="form-input" value={form.shipperContact} onChange={set('shipperContact')} />
             </div>
             <div className="form-group">
-              <label className="form-label">Dirección</label>
+              <label className="form-label">Address</label>
               <input className="form-input" value={form.shipperStreet} onChange={set('shipperStreet')} />
             </div>
             <div className="form-group">
-              <label className="form-label">Ciudad</label>
+              <label className="form-label">City</label>
               <input className="form-input" value={form.shipperCity} onChange={set('shipperCity')} />
             </div>
             <div className="form-group">
-              <label className="form-label">CP</label>
+              <label className="form-label">ZIP</label>
               <input className="form-input" value={form.shipperZip} onChange={set('shipperZip')} />
             </div>
             <div className="form-group">
-              <label className="form-label">País</label>
+              <label className="form-label">Country</label>
               <input className="form-input" value={form.shipperCountry} onChange={set('shipperCountry')} />
             </div>
           </div>
@@ -535,66 +597,66 @@ export default function BookingForm({ onSuccess }) {
 
       {/* ── 7. CONSIGNEE ── */}
       <div className="card" style={S}>
-        <div className="card-header"><span className="card-title">Consignee (Destinatario)</span></div>
+        <div className="card-header"><span className="card-title">Consignee</span></div>
         <div className="card-body">
           <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
-            <label className="form-label">Cargar desde perfil</label>
+            <label className="form-label">Load from profile</label>
             <select className="form-select" value={form.selectedConsigneeProfileId} onChange={e => handleConsigneeSelect(e.target.value)}>
-              <option value="">Entrada manual…</option>
+              <option value="">Manual entry…</option>
               {(consigneeProfiles || []).map(c => <option key={c.id} value={c.id}>{c.consigneeName}</option>)}
             </select>
           </div>
           <div className="form-grid form-grid-2">
             <div className="form-group">
-              <label className="form-label required">Nombre</label>
+              <label className="form-label required">Name</label>
               <input className="form-input" value={form.consigneeName} onChange={set('consigneeName')} />
             </div>
             <div className="form-group">
-              <label className="form-label">Contacto</label>
+              <label className="form-label">Contact</label>
               <input className="form-input" value={form.consigneeContact} onChange={set('consigneeContact')} />
             </div>
             <div className="form-group">
-              <label className="form-label">Dirección</label>
+              <label className="form-label">Address</label>
               <input className="form-input" value={form.consigneeStreet} onChange={set('consigneeStreet')} />
             </div>
             <div className="form-group">
-              <label className="form-label">Ciudad</label>
+              <label className="form-label">City</label>
               <input className="form-input" value={form.consigneeCity} onChange={set('consigneeCity')} />
             </div>
             <div className="form-group">
-              <label className="form-label">CP</label>
+              <label className="form-label">ZIP</label>
               <input className="form-input" value={form.consigneeZip} onChange={set('consigneeZip')} />
             </div>
             <div className="form-group">
-              <label className="form-label">País</label>
+              <label className="form-label">Country</label>
               <input className="form-input" value={form.consigneeCountry} onChange={set('consigneeCountry')} />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── 8. TARIFAS & CARGOS ── */}
+      {/* ── 8. RATES & CHARGES ── */}
       <div className="card" style={S}>
-        <div className="card-header"><span className="card-title">Tarifas & Cargos</span></div>
+        <div className="card-header"><span className="card-title">Rates & Charges</span></div>
         <div className="card-body">
           <div className="form-grid form-grid-4" style={{ marginBottom: 'var(--space-4)' }}>
             <div className="form-group">
-              <label className="form-label">Divisa</label>
+              <label className="form-label">Currency</label>
               <select className="form-select" value={form.currency} onChange={set('currency')}>
                 {['EUR','USD','GBP','CHF','AED','SAR'].map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Tarifa/kg</label>
+              <label className="form-label">Rate/kg</label>
               <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
                 <input type="number" className="form-input" value={form.ratePerKg} onChange={e => setForm(f => ({ ...f, ratePerKg: e.target.value, isRateOverridden: true }))} step="0.01" />
                 {form.isRateOverridden && (
-                  <button type="button" className="button button-ghost button-sm" title="Restablecer tarifa automática" onClick={() => setForm(f => ({ ...f, isRateOverridden: false }))}>↺</button>
+                  <button type="button" className="button button-ghost button-sm" title="Reset to automatic rate" onClick={() => setForm(f => ({ ...f, isRateOverridden: false }))}>↺</button>
                 )}
               </div>
             </div>
             <div className="form-group">
-              <label className="form-label">Flete</label>
+              <label className="form-label">Freight</label>
               <input className="form-input" value={`${form.currency} ${displayFreightCharges}`} readOnly style={{ background: 'var(--color-gray-50)', fontWeight: 600 }} />
             </div>
             <div className="form-group">
@@ -606,16 +668,16 @@ export default function BookingForm({ onSuccess }) {
           {/* Other charges */}
           <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-4)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
-              <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--color-gray-700)' }}>Otros cargos</span>
-              <button type="button" className="button button-secondary button-sm" onClick={addCharge}>+ Añadir cargo</button>
+              <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--color-gray-700)' }}>Other charges</span>
+              <button type="button" className="button button-secondary button-sm" onClick={addCharge}>+ Add charge</button>
             </div>
             {form.otherCharges.map(c => (
               <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr auto', gap: 'var(--space-2)', marginBottom: 'var(--space-2)', alignItems: 'center' }}>
                 <select className="form-select" value={c.chargeCode} onChange={e => updateCharge(c.id, 'chargeCode', e.target.value)}>
-                  <option value="">Código…</option>
+                  <option value="">Code…</option>
                   {iataOtherChargeCodes.map(x => <option key={x.code} value={x.code}>{x.code}</option>)}
                 </select>
-                <input className="form-input" value={c.chargeDescription} onChange={e => updateCharge(c.id, 'chargeDescription', e.target.value)} placeholder="Descripción" />
+                <input className="form-input" value={c.chargeDescription} onChange={e => updateCharge(c.id, 'chargeDescription', e.target.value)} placeholder="Description" />
                 <input type="number" className="form-input" value={c.chargeAmount} onChange={e => updateCharge(c.id, 'chargeAmount', e.target.value)} placeholder="0.00" step="0.01" />
                 <button type="button" className="button button-danger button-sm button-icon" onClick={() => removeCharge(c.id)}>✕</button>
               </div>
@@ -624,31 +686,31 @@ export default function BookingForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* ── 9. INFO ADICIONAL ── */}
+      {/* ── 9. ADDITIONAL INFO ── */}
       <div className="card" style={S}>
-        <div className="card-header"><span className="card-title">Información adicional</span></div>
+        <div className="card-header"><span className="card-title">Additional Information</span></div>
         <div className="card-body">
           <div className="form-grid form-grid-3" style={{ marginBottom: 'var(--space-4)' }}>
             <div className="form-group">
-              <label className="form-label">Tipo de pago</label>
+              <label className="form-label">Payment type</label>
               <select className="form-select" value={form.paymentType} onChange={set('paymentType')}>
                 {paymentTypes.map(p => <option key={p.code} value={p.code}>{p.code} — {p.description}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Estado del booking</label>
+              <label className="form-label">Booking status</label>
               <select className="form-select" value={form.bookingStatus} onChange={set('bookingStatus')}>
                 {bookingStatusOptions.map(s => <option key={s.code} value={s.code}>{s.code} — {s.description}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Referencia FFR</label>
+              <label className="form-label">FFR Reference</label>
               <input className="form-input" value={form.ffrReference} onChange={set('ffrReference')} />
             </div>
           </div>
           <div className="form-grid form-grid-2">
             <div className="form-group">
-              <label className="form-label">Instrucciones de manejo</label>
+              <label className="form-label">Handling instructions</label>
               <textarea className="form-textarea" value={form.handlingInformation} onChange={set('handlingInformation')} rows={2} />
             </div>
             <div className="form-group">
@@ -656,12 +718,12 @@ export default function BookingForm({ onSuccess }) {
               <textarea className="form-textarea" value={form.osiGhaText} onChange={set('osiGhaText')} rows={2} />
             </div>
             <div className="form-group">
-              <label className="form-label">Observaciones FFR</label>
+              <label className="form-label">FFR Remarks</label>
               <textarea className="form-textarea" value={form.ffrRemarks} onChange={set('ffrRemarks')} rows={2} />
             </div>
             <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', paddingTop: 'var(--space-6)' }}>
               <input type="checkbox" id="isFlown" checked={form.isFlown} onChange={e => setForm(f => ({ ...f, isFlown: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer' }} />
-              <label htmlFor="isFlown" style={{ fontWeight: 500, color: 'var(--color-gray-700)', cursor: 'pointer' }}>Mercancía volada (isFlown)</label>
+              <label htmlFor="isFlown" style={{ fontWeight: 500, color: 'var(--color-gray-700)', cursor: 'pointer' }}>Goods flown (isFlown)</label>
             </div>
           </div>
         </div>
@@ -669,16 +731,23 @@ export default function BookingForm({ onSuccess }) {
 
       {/* ── SUBMIT ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', paddingBottom: 'var(--space-8)' }}>
-        <button type="button" className="button button-secondary" onClick={() => { setForm(INITIAL_FORM); setFormError(null); }}>
-          Limpiar formulario
-        </button>
+        {!isEditMode && (
+          <button type="button" className="button button-secondary" onClick={() => { setForm(INITIAL_FORM); setFormError(null); }}>
+            Clear form
+          </button>
+        )}
+        {isEditMode && (
+          <button type="button" className="button button-ghost" onClick={() => onSuccess?.()}>
+            Cancel
+          </button>
+        )}
         <button type="submit" className="button button-primary button-lg" disabled={isSubmitting}>
           {isSubmitting ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
               <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-              Guardando…
+              Saving…
             </span>
-          ) : 'Crear Booking'}
+          ) : isEditMode ? 'Save Changes' : 'Create Booking'}
         </button>
       </div>
     </form>
