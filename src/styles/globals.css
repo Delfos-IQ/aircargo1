@@ -8,24 +8,24 @@
 
 /* ── CSS Custom Properties (Design Tokens) ── */
 :root {
-  /* --- Colores primarios (azul corporativo) --- */
-  --color-primary-50:  #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
+  /* --- Colores primarios (AcrossCargo orange) --- */
+  --color-primary-50:  #fdf3ef;
+  --color-primary-100: #fae4d9;
+  --color-primary-200: #f4c5ae;
+  --color-primary-300: #eca07e;
+  --color-primary-400: #e07250;
+  --color-primary-500: #cb5028;
+  --color-primary-600: #C1440E;
+  --color-primary-700: #9e3709;
+  --color-primary-800: #7a2a07;
+  --color-primary-900: #5c2005;
 
-  /* --- Colores secundarios (índigo) --- */
-  --color-indigo-50:  #eef2ff;
-  --color-indigo-100: #e0e7ff;
-  --color-indigo-500: #6366f1;
-  --color-indigo-600: #4f46e5;
-  --color-indigo-700: #4338ca;
+  /* --- Colores secundarios (warm dark) --- */
+  --color-indigo-50:  #fdf3ef;
+  --color-indigo-100: #fae4d9;
+  --color-indigo-500: #cb5028;
+  --color-indigo-600: #C1440E;
+  --color-indigo-700: #9e3709;
 
   /* --- Neutrales --- */
   --color-gray-50:  #f8fafc;
@@ -58,12 +58,12 @@
   --color-surface:      #ffffff;
   --color-surface-alt:  #f8fafc;
   --color-border:       #e2e8f0;
-  --color-border-focus: #3b82f6;
+  --color-border-focus: #C1440E;
 
   /* --- Sidebar --- */
-  --sidebar-bg:         #0f172a;
-  --sidebar-bg-hover:   #1e293b;
-  --sidebar-bg-active:  #1d4ed8;
+  --sidebar-bg:         #1a0d0a;
+  --sidebar-bg-hover:   #2d1810;
+  --sidebar-bg-active:  #C1440E;
   --sidebar-text:       #94a3b8;
   --sidebar-text-active:#ffffff;
   --sidebar-width:      240px;
@@ -610,7 +610,7 @@ body {
 .form-textarea:focus {
   outline: none;
   border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  box-shadow: 0 0 0 3px rgba(193, 68, 14, 0.15);
 }
 
 .form-input::placeholder,
@@ -815,7 +815,7 @@ body {
 
 .login-left {
   flex: 1;
-  background: linear-gradient(135deg, var(--color-primary-900) 0%, var(--color-indigo-700) 100%);
+  background: linear-gradient(150deg, #1a0d0a 0%, #3d1f12 60%, #5c2005 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
