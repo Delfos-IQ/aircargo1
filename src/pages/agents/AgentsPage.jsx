@@ -15,7 +15,9 @@ const FIELDS = [
   },
   { key: 'agentPhone', label: 'Phone', type: 'tel' },
   { key: 'agentEmail', label: 'Email', type: 'email', transform: v => v.toLowerCase() },
-  { key: 'agentIataCassNumber', label: 'IATA CASS (e.g. 1234567/0000)', transform: v => v.toUpperCase() },
+  { key: 'agentIataCassNumber', label: 'IATA CASS Number', transform: v => v.toUpperCase() },
+  { key: 'agentShortName', label: 'Short Name', transform: v => v.toUpperCase() },
+  { key: 'agentVat', label: 'VAT Number', transform: v => v.toUpperCase() },
 ];
 
 const COLUMNS = [
@@ -25,6 +27,8 @@ const COLUMNS = [
   { label: 'Country', key: 'agentCountryCode' },
   { label: 'Email', key: 'agentEmail' },
   { label: 'IATA CASS', key: 'agentIataCassNumber' },
+  { label: 'Short Name', key: 'agentShortName' },
+  { label: 'VAT', key: 'agentVat' },
 ];
 
 export default function AgentsPage() {
@@ -33,7 +37,7 @@ export default function AgentsPage() {
       <CrudPage
         title="Agent Management"
         collectionName="agentProfiles"
-        initialFormData={{ agentName: '', agentId: '', agentAddress: '', agentCity: '', agentCountryCode: '', agentPhone: '', agentEmail: '', agentIataCassNumber: '' }}
+        initialFormData={{ agentName: '', agentId: '', agentAddress: '', agentCity: '', agentCountryCode: '', agentPhone: '', agentEmail: '', agentIataCassNumber: '', agentShortName: '', agentVat: '' }}
         fields={FIELDS}
         listColumns={COLUMNS}
         searchKeys={['agentName', 'agentId', 'agentIataCassNumber', 'agentCity']}
