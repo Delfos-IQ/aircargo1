@@ -79,10 +79,16 @@ export default function Layout({ children }) {
       {/* ── Sidebar ── */}
       <aside className={`sidebar${mobileOpen ? ' open' : ''}`}>
         <div className="sidebar-logo">
-          <img src="/across_logo.png" alt="GSSA Logo" />
+          {/* AcrossCargo icon mark */}
+          <svg width="28" height="32" viewBox="0 0 100 115" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+            <path d="M50 3 L97 112 H68 V76 H32 V112 H3 Z" fill="#C1440E"/>
+            <ellipse cx="50" cy="36" rx="6" ry="22" fill="white"/>
+            <path d="M6 74 H20 L50 60 L80 74 H94 L80 70 L50 56 L20 70 Z" fill="white"/>
+            <path d="M35 90 H42 L50 83 L58 90 H65 L58 87 L50 80 L42 87 Z" fill="white"/>
+          </svg>
           <div>
-            <div className="sidebar-logo-text">GSSA Cargo</div>
-            <div className="sidebar-logo-sub">Management System</div>
+            <div className="sidebar-logo-text" style={{ letterSpacing: '0.04em', fontSize: '0.8rem' }}>ACROSSCARGO</div>
+            <div className="sidebar-logo-sub">Cargo Management</div>
           </div>
         </div>
 
@@ -131,7 +137,7 @@ export default function Layout({ children }) {
           <button onClick={() => setMobileOpen(true)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-gray-700)', display: 'flex' }}>
             <Icon d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" size={22} />
           </button>
-          <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--color-gray-800)' }}>GSSA Cargo</span>
+          <span style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)', color: 'var(--color-gray-800)', letterSpacing: '0.04em' }}>ACROSSCARGO</span>
           <div className="sidebar-avatar" style={{ width: 28, height: 28, fontSize: '0.7rem' }}>{initials}</div>
         </div>
         {children}
