@@ -39,7 +39,7 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
   const isEditMode = !!editingBooking;
   const {
     currentUserProfile, agentProfiles, shipperProfiles, consigneeProfiles,
-    flightSchedules, iataAirportCodes, awbStockAllocations, rateTableEntries,
+    flightSchedules, iataAirportCodes, awbStockAllocations, rateTableEntries, bookings,
   } = useAppContext();
 
   // Build initial state from editing booking if provided
@@ -283,6 +283,23 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
     const validationError = validateBookingData(data);
     if (validationError) { setFormError(validationError); return; }
 
+    // ── Capacity check (before any Firestore write) ──
+    for (const seg of data.flightSegments) {
+      if (!seg.flightScheduleId || !seg.departureDate) continue;
+      const key = `${seg.flightScheduleId}_${seg.departureDate}`;
+      const cap = flightCapacityMap[key];
+      if (!cap || cap.maxKg === null) continue;
+      const thisKg = parseFloat(displayChargeableWeightKg) || 0;
+      if (cap.bookedKg + thisKg > cap.maxKg) {
+        const avail = Math.max(0, cap.maxKg - cap.bookedKg).toFixed(1);
+        setFormError(
+          `Cannot book: flight ${cap.flightNumber || seg.flightNumber} on ${seg.departureDate} ` +
+          `has only ${avail} kg available. This shipment requires ${thisKg.toFixed(1)} kg.`
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       // ── EDIT MODE: simple updateDoc ──
@@ -341,6 +358,28 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
       setIsSubmitting(false);
     }
   };
+
+  /* ── Real-time flight capacity map ── */
+  const flightCapacityMap = useMemo(() => {
+    const map = {};
+    (form.flightSegments || []).forEach(seg => {
+      if (!seg.flightScheduleId || !seg.departureDate) return;
+      const key = `${seg.flightScheduleId}_${seg.departureDate}`;
+      if (map[key] !== undefined) return;
+      const flight = (flightSchedules || []).find(f => f.id === seg.flightScheduleId);
+      const maxKg  = parseFloat(flight?.maxPayloadKg)  || null;
+      const maxCbm = parseFloat(flight?.maxPayloadCbm) || null;
+      const bookedKg = (bookings || []).reduce((sum, b) => {
+        if (isEditMode && b.id === editingBooking?.id) return sum;
+        const hit = (b.flightSegments || []).find(
+          s => s.flightScheduleId === seg.flightScheduleId && s.departureDate === seg.departureDate
+        );
+        return hit ? sum + (parseFloat(b.chargeableWeightKg) || 0) : sum;
+      }, 0);
+      map[key] = { maxKg, maxCbm, bookedKg, flightNumber: flight?.flightNumber || seg.flightNumber };
+    });
+    return map;
+  }, [form.flightSegments, flightSchedules, bookings, isEditMode, editingBooking]);
 
   /* ── Airports list ── */
   const airports = useMemo(() => {
@@ -548,6 +587,45 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
                       <input className="form-input" value={seg.carrierCode} onChange={e => updateFlight(seg.id, 'carrierCode', e.target.value.toUpperCase())} placeholder="IB" maxLength={2} />
                     </div>
                   </div>
+                  {/* ── Capacity indicator ── */}
+                  {(() => {
+                    const key = `${seg.flightScheduleId}_${seg.departureDate}`;
+                    const cap = seg.flightScheduleId && seg.departureDate ? flightCapacityMap[key] : null;
+                    if (!cap) return null;
+                    if (cap.maxKg === null) return (
+                      <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-400)' }}>
+                        No payload limit configured for this flight.
+                      </div>
+                    );
+                    const thisKg    = parseFloat(displayChargeableWeightKg) || 0;
+                    const afterKg   = cap.bookedKg + thisKg;
+                    const pct       = cap.maxKg > 0 ? Math.round((afterKg / cap.maxKg) * 100) : 0;
+                    const availKg   = Math.max(0, cap.maxKg - cap.bookedKg);
+                    const isFull    = afterKg > cap.maxKg;
+                    const isWarning = !isFull && pct >= 80;
+                    const barColor  = isFull ? '#ef4444' : isWarning ? '#f59e0b' : '#22c55e';
+                    const bgColor   = isFull ? '#fef2f2' : isWarning ? '#fffbeb' : '#f0fdf4';
+                    const txtColor  = isFull ? '#991b1b' : isWarning ? '#92400e' : '#166534';
+                    return (
+                      <div style={{ marginTop: 'var(--space-3)', background: bgColor, borderRadius: 'var(--radius-md)', padding: 'var(--space-2) var(--space-3)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: txtColor }}>
+                            {isFull ? '🔴 Over capacity' : isWarning ? '🟡 Near capacity' : '🟢 Capacity available'}
+                          </span>
+                          <span style={{ fontSize: 'var(--font-size-xs)', color: txtColor, fontWeight: 600 }}>{pct}%</span>
+                        </div>
+                        <div style={{ background: '#e5e7eb', borderRadius: 99, height: 6, marginBottom: 6 }}>
+                          <div style={{ background: barColor, borderRadius: 99, height: 6, width: `${Math.min(pct, 100)}%`, transition: 'width 300ms' }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--font-size-xs)', color: txtColor }}>
+                          <span>Booked: <strong>{cap.bookedKg.toFixed(1)} kg</strong></span>
+                          <span>This shipment: <strong>+{thisKg.toFixed(1)} kg</strong></span>
+                          <span>Available: <strong>{availKg.toFixed(1)} kg</strong></span>
+                          <span>Max: <strong>{cap.maxKg.toLocaleString()} kg</strong></span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
