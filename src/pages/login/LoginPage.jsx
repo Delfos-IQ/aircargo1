@@ -29,10 +29,21 @@ export default function LoginPage() {
       {/* ── Left panel: branding ── */}
       <div className="login-left">
         <div className="login-brand">
-          <img src="/across_logo.png" alt="GSSA Logo" className="login-brand-logo" />
-          <h1 className="login-brand-title">GSSA Cargo<br />Management</h1>
+          {/* AcrossCargo logo */}
+          <div style={{ marginBottom: 'var(--space-8)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)' }}>
+            <svg width="90" height="104" viewBox="0 0 100 115" xmlns="http://www.w3.org/2000/svg">
+              <path d="M50 3 L97 112 H68 V76 H32 V112 H3 Z" fill="#C1440E"/>
+              <ellipse cx="50" cy="36" rx="6" ry="22" fill="white"/>
+              <path d="M6 74 H20 L50 60 L80 74 H94 L80 70 L50 56 L20 70 Z" fill="white"/>
+              <path d="M35 90 H42 L50 83 L58 90 H65 L58 87 L50 80 L42 87 Z" fill="white"/>
+            </svg>
+            <div style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '0.12em', color: '#ffffff' }}>
+              ACROSSCARGO
+            </div>
+          </div>
+          <h1 className="login-brand-title" style={{ fontSize: 'var(--font-size-2xl)' }}>Cargo Management<br />Platform</h1>
           <p className="login-brand-subtitle">
-            Air cargo management platform for GSSA agents
+            Fast and reliable GSSA service dedicated to airlines representation
           </p>
         </div>
 
@@ -129,7 +140,7 @@ export default function LoginPage() {
             marginTop: 'var(--space-8)', fontSize: 'var(--font-size-xs)',
             color: 'var(--color-gray-400)', textAlign: 'center',
           }}>
-            © {new Date().getFullYear()} GSSA Cargo Management System
+            © {new Date().getFullYear()} AcrossCargo — Cargo Management System
           </p>
         </div>
       </div>
