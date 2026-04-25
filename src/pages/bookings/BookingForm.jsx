@@ -111,13 +111,17 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
     setDisplayChargeableWeightKg(chg.toFixed(1));
 
     const rateTable = rateTableEntries?.filter(r => r.agentProfileId === form.selectedAgentProfileId) || [];
+    const rateResult = form.isRateOverridden
+      ? null
+      : getRateForBooking(form.origin, form.destination, form.currency, chg, rateTable);
+    // getRateForBooking returns { rate, minCharge } or null — extract the numeric rate safely
     const rate = form.isRateOverridden
       ? parseFloat(form.ratePerKg) || 0
-      : getRateForBooking(form.origin, form.destination, form.currency, chg, rateTable);
+      : (rateResult?.rate ?? 0);
 
     if (!form.isRateOverridden) setForm(f => ({ ...f, ratePerKg: rate.toFixed(2) }));
 
-    const freight = chg * (parseFloat(form.isRateOverridden ? form.ratePerKg : rate) || 0);
+    const freight = chg * rate;
     setDisplayFreightCharges(freight.toFixed(2));
 
     const otherTotal = (form.otherCharges || []).reduce((s, c) => s + (parseFloat(c.chargeAmount) || 0), 0);
