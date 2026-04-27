@@ -5,7 +5,7 @@ import { useAppContext } from '../../context/AppContext.jsx';
 import { formatDate, toYyyyMmDd } from '../../utils/dates.js';
 import { generateFFRMessage } from '../../utils/ffr.js';
 import { generateBookingConfirmationPdf } from '../../utils/pdf.js';
-import { exportBookingsToExcel } from '../../utils/exportBookingsExcel.js';
+// exportBookingsExcel uses ExcelJS (CommonJS) — loaded lazily on demand
 import toast from 'react-hot-toast';
 
 /* ── FFR Modal ─────────────────────────────────────── */
@@ -145,6 +145,7 @@ export default function BookingTable({ onEdit }) {
     if (exporting) return;
     setExporting(true);
     try {
+      const { exportBookingsToExcel } = await import('../../utils/exportBookingsExcel.js');
       await exportBookingsToExcel(filtered, agentProfiles || [], {
         search, filterAgent, filterStatus, filterDateFrom, filterDateTo,
       });
