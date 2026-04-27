@@ -8,8 +8,15 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  optimizeDeps: {
+    include: ['exceljs'],
+  },
   build: {
     outDir: 'dist',
     sourcemap: false,
+    commonjsOptions: {
+      include: [/exceljs/, /node_modules/],
+      transformMixedEsModules: true,
+    },
   },
 });
