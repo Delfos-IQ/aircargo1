@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../../context/AppContext.jsx';
 import { buildUTCDateRange, formatDate } from '../../utils/dates.js';
 import { generateInvoicePdf } from '../../utils/pdf.js';
@@ -7,18 +7,31 @@ import Footer from '../../components/Footer.jsx';
 import toast from 'react-hot-toast';
 
 export default function BillingPage() {
-  const { bookings, agentProfiles } = useAppContext();
+  const { bookings, agentProfiles, isAdmin, myAgentId } = useAppContext();
   const [selectedAgentId,    setSelectedAgentId]    = useState('');
   const [dateFrom,           setDateFrom]           = useState('');
   const [dateTo,             setDateTo]             = useState('');
   const [bookingsForInvoice, setBookingsForInvoice] = useState([]);
   const [filtered,           setFiltered]           = useState(false);
 
+  // Agents only see their own bookings; pre-select the agent dropdown for them
+  const scopedBookings = useMemo(() => {
+    const all = bookings || [];
+    return isAdmin ? all : all.filter(b => b.agent_id === myAgentId);
+  }, [bookings, isAdmin, myAgentId]);
+
+  // Auto-select the agent profile for agent-role users
+  useEffect(() => {
+    if (isAdmin || !myAgentId || !agentProfiles?.length) return;
+    const profile = agentProfiles.find(p => p.agentId === myAgentId);
+    if (profile) setSelectedAgentId(profile.id);
+  }, [isAdmin, myAgentId, agentProfiles]);
+
   const agentsWithBookings = useMemo(() => {
-    if (!bookings || !agentProfiles) return [];
-    const ids = new Set(bookings.map(b => b.selectedAgentProfileId).filter(Boolean));
+    if (!scopedBookings || !agentProfiles) return [];
+    const ids = new Set(scopedBookings.map(b => b.selectedAgentProfileId).filter(Boolean));
     return agentProfiles.filter(a => ids.has(a.id));
-  }, [bookings, agentProfiles]);
+  }, [scopedBookings, agentProfiles]);
 
   const handleFilter = () => {
     if (!selectedAgentId || !dateFrom || !dateTo) {
@@ -26,7 +39,7 @@ export default function BillingPage() {
       return;
     }
     const { startDate, endDate } = buildUTCDateRange(dateFrom, dateTo);
-    const result = (bookings || [])
+    const result = scopedBookings
       .filter(b => {
         const d = b.createdAt?.toDate();
         return b.selectedAgentProfileId === selectedAgentId && d && d >= startDate && d <= endDate;
@@ -59,16 +72,25 @@ export default function BillingPage() {
             <div className="filter-row">
               <div className="form-group">
                 <label className="form-label">Agent</label>
-                <select
-                  value={selectedAgentId}
-                  onChange={e => setSelectedAgentId(e.target.value)}
-                  className="form-select"
-                >
-                  <option value="">Select agent…</option>
-                  {agentsWithBookings.map(a => (
-                    <option key={a.id} value={a.id}>{a.agentName}</option>
-                  ))}
-                </select>
+                {isAdmin ? (
+                  <select
+                    value={selectedAgentId}
+                    onChange={e => setSelectedAgentId(e.target.value)}
+                    className="form-select"
+                  >
+                    <option value="">Select agent…</option>
+                    {agentsWithBookings.map(a => (
+                      <option key={a.id} value={a.id}>{a.agentName}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="form-input"
+                    value={agentProfiles?.find(a => a.id === selectedAgentId)?.agentName || '—'}
+                    readOnly
+                    style={{ background: 'var(--color-gray-50)', color: 'var(--color-gray-600)' }}
+                  />
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label">From</label>
