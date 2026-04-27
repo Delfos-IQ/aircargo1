@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { db } from '../../services/firebase.js';
-import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { setDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { useFirestoreCollection } from '../../hooks/useFirestoreCollection.js';
+import { useAppContext } from '../../context/AppContext.jsx';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import toast from 'react-hot-toast';
 import Layout from '../../components/Layout.jsx';
 
-const INITIAL = { username: '', email: '', password: '', role: 'user' };
+const INITIAL = { username: '', email: '', password: '', role: 'user', agentId: '' };
 
 export default function UsersPage() {
   const { data: users, isLoading } = useFirestoreCollection('userProfiles');
+  const { agentProfiles } = useAppContext();
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState(INITIAL);
@@ -31,17 +33,23 @@ export default function UsersPage() {
     try {
       if (isEditing) {
         const { id, uid, email, password, ...rest } = formData;
-        await updateDoc(doc(db, 'userProfiles', editingUser.id), { ...rest, username: rest.username.toUpperCase() });
+        await updateDoc(doc(db, 'userProfiles', editingUser.id), {
+          ...rest,
+          username: rest.username.toUpperCase(),
+          agentId: rest.agentId || null,
+        });
         toast.success('User updated');
       } else {
         if (!formData.email || !formData.password) { toast.error('Email and password are required'); setSaving(false); return; }
-        const auth = getAuth();
-        const credential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        await addDoc(collection(db, 'userProfiles'), {
-          uid: credential.user.uid,
-          email: formData.email.toLowerCase(),
+        const authInstance = getAuth();
+        const credential = await createUserWithEmailAndPassword(authInstance, formData.email, formData.password);
+        // Document ID = Firebase UID — required for Firestore Security Rules
+        await setDoc(doc(db, 'userProfiles', credential.user.uid), {
+          uid:      credential.user.uid,
+          email:    formData.email.toLowerCase(),
           username: formData.username.toUpperCase(),
-          role: formData.role || 'user',
+          role:     formData.role || 'user',
+          agentId:  formData.agentId || null,
         });
         toast.success('User created');
       }
@@ -96,6 +104,7 @@ export default function UsersPage() {
                     <th>Username</th>
                     <th>Email</th>
                     <th>Role</th>
+                    <th>Agent ID</th>
                     <th style={{ width: 140 }}>Actions</th>
                   </tr>
                 </thead>
@@ -105,12 +114,15 @@ export default function UsersPage() {
                       <td style={{ fontWeight: 500 }}>{u.username}</td>
                       <td>{u.email}</td>
                       <td>
-                        <span className={`badge-${u.role === 'admin' ? 'blue' : 'gray'}`}
+                        <span
                           style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase',
                             background: u.role === 'admin' ? 'var(--color-blue-100)' : 'var(--color-gray-100)',
                             color: u.role === 'admin' ? 'var(--color-blue-800)' : 'var(--color-gray-600)' }}>
                           {u.role || 'user'}
                         </span>
+                      </td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--color-gray-500)' }}>
+                        {u.agentId || '—'}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 4 }}>
@@ -160,10 +172,31 @@ export default function UsersPage() {
                 <div className="form-group">
                   <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, display: 'block', marginBottom: 4 }}>Role *</label>
                   <select className="form-select" value={formData.role} onChange={e => handleChange('role', e.target.value)}>
-                    <option value="user">User</option>
+                    <option value="user">Agent (user)</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
+                {formData.role !== 'admin' && (
+                  <div className="form-group">
+                    <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, display: 'block', marginBottom: 4 }}>
+                      Linked Agent Profile
+                      <span style={{ fontWeight: 400, color: 'var(--color-gray-500)', marginLeft: 4 }}>(optional)</span>
+                    </label>
+                    <select
+                      className="form-select"
+                      value={formData.agentId || ''}
+                      onChange={e => handleChange('agentId', e.target.value)}
+                    >
+                      <option value="">— not linked —</option>
+                      {(agentProfiles || []).map(a => (
+                        <option key={a.id} value={a.agentId}>{a.agentName} ({a.agentId})</option>
+                      ))}
+                    </select>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--color-gray-500)', marginTop: 4 }}>
+                      Determines which bookings this user can see and create.
+                    </p>
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
                   <button type="button" className="button button-ghost" onClick={closeForm} disabled={saving}>Cancel</button>
                   <button type="submit" className="button button-primary" disabled={saving}>{saving ? 'Saving…' : isEditing ? 'Update' : 'Create User'}</button>
