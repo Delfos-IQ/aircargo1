@@ -7,11 +7,17 @@ import Footer from '../../components/Footer.jsx';
 import toast from 'react-hot-toast';
 
 export default function ReportsPage() {
-  const { bookings, agentProfiles, iataAirportCodes } = useAppContext();
+  const { bookings, agentProfiles, iataAirportCodes, isAdmin, myAgentId } = useAppContext();
   const [dateFrom,   setDateFrom]   = useState('');
   const [dateTo,     setDateTo]     = useState('');
   const [reportData, setReportData] = useState([]);
   const [generated,  setGenerated]  = useState(false);
+
+  // Agents only see their own bookings
+  const scopedBookings = React.useMemo(() => {
+    const all = bookings || [];
+    return isAdmin ? all : all.filter(b => b.agent_id === myAgentId);
+  }, [bookings, isAdmin, myAgentId]);
 
   const handleGenerate = () => {
     if (!dateFrom || !dateTo) {
@@ -19,7 +25,7 @@ export default function ReportsPage() {
       return;
     }
     const { startDate, endDate } = buildUTCDateRange(dateFrom, dateTo);
-    const filtered = (bookings || []).filter(b => {
+    const filtered = scopedBookings.filter(b => {
       const d = b.createdAt?.toDate();
       return d && d >= startDate && d <= endDate;
     });
