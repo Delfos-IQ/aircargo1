@@ -12,6 +12,7 @@ import {
   formatNumberWithSeparators,
 } from '../../utils/index.js';
 import toast from 'react-hot-toast';
+import { notifyBookingCreated, notifyAwbStockAlert, notifyBookingStatusChanged } from '../../services/notifications.js';
 
 /* ─── Initial form state ─── */
 const INITIAL_FORM = {
@@ -40,6 +41,7 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
   const {
     currentUserProfile, agentProfiles, shipperProfiles, consigneeProfiles,
     flightSchedules, iataAirportCodes, awbStockAllocations, rateTableEntries, bookings,
+    isAdmin, myAgentId,
   } = useAppContext();
 
   // Build initial state from editing booking if provided
@@ -173,6 +175,35 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
     setForm(f => ({ ...f, ...updates }));
   }, [agentProfiles, awbStockAllocations]);
 
+  /* ── AWB preview — shows next AWB and remaining stock before save ── */
+  const awbPreview = useMemo(() => {
+    if (!form.awbInputPrefix || !form.awbInputNumber || !form.selectedAgentProfileId) return null;
+    // Find the allocation this AWB belongs to
+    const alloc = (awbStockAllocations || []).find(a =>
+      a.prefix === form.awbInputPrefix &&
+      a.agentProfileId === form.selectedAgentProfileId &&
+      isSerialLTE(a.startNumber, form.awbInputNumber) &&
+      isSerialLTE(form.awbInputNumber, a.endNumber)
+    );
+    const awb = `${form.awbInputPrefix}-${form.awbInputNumber}`;
+    if (!alloc) return { awb, remaining: null, total: null };
+    const total     = calculateAwbCount(alloc.startNumber, alloc.endNumber);
+    const used      = (alloc.usedAwbs || []).length;
+    // In edit mode the current AWB isn't in usedAwbs yet, so we don't subtract it again
+    const remaining = total - used;
+    const pct       = total > 0 ? remaining / total : 1;
+    const level     = pct > 0.5 ? 'green' : pct > 0.25 ? 'amber' : 'red';
+    return { awb, remaining, total, level };
+  }, [form.awbInputPrefix, form.awbInputNumber, form.selectedAgentProfileId, awbStockAllocations]);
+
+  /* ── Auto-select agent for agent-role users (create mode only) ── */
+  useEffect(() => {
+    if (isEditMode || isAdmin || !myAgentId || !agentProfiles?.length) return;
+    if (form.selectedAgentProfileId) return; // already set
+    const profile = agentProfiles.find(p => p.agentId === myAgentId);
+    if (profile) handleAgentSelect(profile.id);
+  }, [isEditMode, isAdmin, myAgentId, agentProfiles]); // eslint-disable-line
+
   /* ── Select shipper ── */
   const handleShipperSelect = (id) => {
     const p = shipperProfiles?.find(s => s.id === id);
@@ -292,13 +323,22 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
       if (!seg.flightScheduleId || !seg.departureDate) continue;
       const key = `${seg.flightScheduleId}_${seg.departureDate}`;
       const cap = flightCapacityMap[key];
-      if (!cap || cap.maxKg === null) continue;
-      const thisKg = parseFloat(displayChargeableWeightKg) || 0;
-      if (cap.bookedKg + thisKg > cap.maxKg) {
+      if (!cap) continue;
+      const thisKg  = parseFloat(displayChargeableWeightKg) || 0;
+      const thisCbm = parseFloat(displayVolumeM3) || 0;
+      if (cap.maxKg !== null && cap.bookedKg + thisKg > cap.maxKg) {
         const avail = Math.max(0, cap.maxKg - cap.bookedKg).toFixed(1);
         setFormError(
           `Cannot book: flight ${cap.flightNumber || seg.flightNumber} on ${seg.departureDate} ` +
           `has only ${avail} kg available. This shipment requires ${thisKg.toFixed(1)} kg.`
+        );
+        return;
+      }
+      if (cap.maxCbm !== null && cap.bookedCbm + thisCbm > cap.maxCbm) {
+        const availCbm = Math.max(0, cap.maxCbm - cap.bookedCbm).toFixed(3);
+        setFormError(
+          `Cannot book: flight ${cap.flightNumber || seg.flightNumber} on ${seg.departureDate} ` +
+          `has only ${availCbm} m³ available. This shipment requires ${thisCbm.toFixed(3)} m³.`
         );
         return;
       }
@@ -308,12 +348,16 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
     try {
       // ── EDIT MODE: simple updateDoc ──
       if (isEditMode && editingBooking?.id) {
+        const oldStatus = editingBooking.bookingStatus;
         await updateDoc(doc(db, 'bookings', editingBooking.id), {
           ...data,
           updatedAt: serverTimestamp(),
           updatedBy: currentUserProfile?.email || 'unknown',
         });
         toast.success('Booking updated successfully.');
+        // Notify agent if status changed
+        const agentProfile = agentProfiles?.find(p => p.id === data.selectedAgentProfileId);
+        notifyBookingStatusChanged(data, oldStatus, agentProfile);
         onSuccess?.();
         return;
       }
@@ -351,6 +395,24 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
       });
 
       toast.success('Booking created successfully.');
+
+      // ── Post-create notifications (fire-and-forget) ──
+      const agentProfile = agentProfiles?.find(p => p.id === data.selectedAgentProfileId);
+      notifyBookingCreated(data, agentProfile);
+
+      // Check AWB stock level for this agent — alert if < 25% remaining
+      const agentAllocs = (awbStockAllocations || []).filter(a => a.agentProfileId === data.selectedAgentProfileId);
+      for (const alloc of agentAllocs) {
+        const { calculateAwbCount } = await import('../../utils/awb.js');
+        const total    = calculateAwbCount(alloc.startNumber, alloc.endNumber);
+        const used     = (alloc.usedAwbs || []).length + 1; // +1 for the one just created
+        const avail    = total - used;
+        if (total > 0 && avail / total < 0.25) {
+          notifyAwbStockAlert(alloc, agentProfile, avail, total);
+          break; // alert once per booking
+        }
+      }
+
       setForm(INITIAL_FORM);
       setFormError(null);
       onSuccess?.();
@@ -373,14 +435,18 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
       const flight = (flightSchedules || []).find(f => f.id === seg.flightScheduleId);
       const maxKg  = parseFloat(flight?.maxPayloadKg)  || null;
       const maxCbm = parseFloat(flight?.maxPayloadCbm) || null;
-      const bookedKg = (bookings || []).reduce((sum, b) => {
-        if (isEditMode && b.id === editingBooking?.id) return sum;
+      const { bookedKg, bookedCbm } = (bookings || []).reduce((acc, b) => {
+        if (isEditMode && b.id === editingBooking?.id) return acc;
         const hit = (b.flightSegments || []).find(
           s => s.flightScheduleId === seg.flightScheduleId && s.departureDate === seg.departureDate
         );
-        return hit ? sum + (parseFloat(b.chargeableWeightKg) || 0) : sum;
-      }, 0);
-      map[key] = { maxKg, maxCbm, bookedKg, flightNumber: flight?.flightNumber || seg.flightNumber };
+        if (!hit) return acc;
+        return {
+          bookedKg:  acc.bookedKg  + (parseFloat(b.chargeableWeightKg) || 0),
+          bookedCbm: acc.bookedCbm + (parseFloat(b.volumeM3)           || 0),
+        };
+      }, { bookedKg: 0, bookedCbm: 0 });
+      map[key] = { maxKg, maxCbm, bookedKg, bookedCbm, flightNumber: flight?.flightNumber || seg.flightNumber };
     });
     return map;
   }, [form.flightSegments, flightSchedules, bookings, isEditMode, editingBooking]);
@@ -414,10 +480,15 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
           <div className="form-grid form-grid-3">
             <div className="form-group">
               <label className="form-label required">Agent</label>
-              <select className="form-select" value={form.selectedAgentProfileId} onChange={e => handleAgentSelect(e.target.value)}>
-                <option value="">Select agent…</option>
-                {(agentProfiles || []).map(a => <option key={a.id} value={a.id}>{a.agentName}</option>)}
-              </select>
+              {isAdmin ? (
+                <select className="form-select" value={form.selectedAgentProfileId} onChange={e => handleAgentSelect(e.target.value)}>
+                  <option value="">Select agent…</option>
+                  {(agentProfiles || []).map(a => <option key={a.id} value={a.id}>{a.agentName}</option>)}
+                </select>
+              ) : (
+                <input className="form-input" value={form.agentNameDisplay || '—'} readOnly
+                  style={{ background: 'var(--color-gray-50)', color: 'var(--color-gray-600)' }} />
+              )}
             </div>
             <div className="form-group">
               <label className="form-label required">AWB Prefix</label>
@@ -429,10 +500,57 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
             </div>
           </div>
           {form.agentNameDisplay && (
-            <div style={{ marginTop: 'var(--space-3)', display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 'var(--space-3)', display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'center' }}>
               <span className="badge badge-blue">{form.agentNameDisplay}</span>
               {form.agentCassDisplay && <span className="badge badge-gray">CASS: {form.agentCassDisplay}</span>}
               {form.agentAddressDisplay && <span className="badge badge-gray">{form.agentAddressDisplay}</span>}
+            </div>
+          )}
+
+          {/* AWB preview indicator */}
+          {!isEditMode && awbPreview && (
+            <div style={{
+              marginTop: 'var(--space-3)',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+              background: awbPreview.level === 'green' ? '#f0fdf4'
+                        : awbPreview.level === 'amber' ? '#fffbeb'
+                        : awbPreview.level === 'red'   ? '#fef2f2'
+                        : 'var(--color-gray-50)',
+              border: `1px solid ${awbPreview.level === 'green' ? '#bbf7d0'
+                                  : awbPreview.level === 'amber' ? '#fde68a'
+                                  : awbPreview.level === 'red'   ? '#fecaca'
+                                  : 'var(--color-border)'}`,
+            }}>
+              {/* AWB number */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"
+                  style={{ width: 15, height: 15, flexShrink: 0,
+                    color: awbPreview.level === 'green' ? '#16a34a' : awbPreview.level === 'amber' ? '#d97706' : awbPreview.level === 'red' ? '#dc2626' : 'var(--color-gray-500)' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.9rem',
+                  color: awbPreview.level === 'green' ? '#15803d' : awbPreview.level === 'amber' ? '#b45309' : awbPreview.level === 'red' ? '#b91c1c' : 'var(--color-text)' }}>
+                  {awbPreview.awb}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-gray-500)' }}>will be assigned</span>
+              </div>
+
+              {/* Stock level pill */}
+              {awbPreview.remaining !== null && (
+                <span style={{
+                  marginLeft: 'auto',
+                  fontSize: '0.72rem', fontWeight: 600,
+                  padding: '3px 9px', borderRadius: 20,
+                  background: awbPreview.level === 'green' ? '#dcfce7' : awbPreview.level === 'amber' ? '#fef3c7' : '#fee2e2',
+                  color:      awbPreview.level === 'green' ? '#166534' : awbPreview.level === 'amber' ? '#92400e' : '#991b1b',
+                }}>
+                  {awbPreview.remaining} / {awbPreview.total} remaining
+                  {awbPreview.level === 'amber' && ' ⚠ low stock'}
+                  {awbPreview.level === 'red'   && ' ⚠ critical'}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -596,37 +714,69 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
                     const key = `${seg.flightScheduleId}_${seg.departureDate}`;
                     const cap = seg.flightScheduleId && seg.departureDate ? flightCapacityMap[key] : null;
                     if (!cap) return null;
-                    if (cap.maxKg === null) return (
+                    if (cap.maxKg === null && cap.maxCbm === null) return (
                       <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-400)' }}>
                         No payload limit configured for this flight.
                       </div>
                     );
-                    const thisKg    = parseFloat(displayChargeableWeightKg) || 0;
-                    const afterKg   = cap.bookedKg + thisKg;
-                    const pct       = cap.maxKg > 0 ? Math.round((afterKg / cap.maxKg) * 100) : 0;
-                    const availKg   = Math.max(0, cap.maxKg - cap.bookedKg);
-                    const isFull    = afterKg > cap.maxKg;
-                    const isWarning = !isFull && pct >= 80;
-                    const barColor  = isFull ? '#ef4444' : isWarning ? '#f59e0b' : '#22c55e';
+                    const thisKg  = parseFloat(displayChargeableWeightKg) || 0;
+                    const thisCbm = parseFloat(displayVolumeM3) || 0;
+
+                    // Kg metrics
+                    const afterKg  = cap.maxKg !== null ? cap.bookedKg + thisKg : null;
+                    const pctKg    = (cap.maxKg && afterKg !== null) ? Math.round((afterKg / cap.maxKg) * 100) : null;
+                    const fullKg   = cap.maxKg !== null && afterKg > cap.maxKg;
+                    const warnKg   = !fullKg && pctKg >= 80;
+
+                    // Cbm metrics
+                    const afterCbm = cap.maxCbm !== null ? cap.bookedCbm + thisCbm : null;
+                    const pctCbm   = (cap.maxCbm && afterCbm !== null) ? Math.round((afterCbm / cap.maxCbm) * 100) : null;
+                    const fullCbm  = cap.maxCbm !== null && afterCbm > cap.maxCbm;
+                    const warnCbm  = !fullCbm && pctCbm >= 80;
+
+                    const isFull    = fullKg || fullCbm;
+                    const isWarning = !isFull && (warnKg || warnCbm);
                     const bgColor   = isFull ? '#fef2f2' : isWarning ? '#fffbeb' : '#f0fdf4';
                     const txtColor  = isFull ? '#991b1b' : isWarning ? '#92400e' : '#166534';
+
+                    const Bar = ({ pct, fullBar }) => {
+                      const color = fullBar ? '#ef4444' : (pct >= 80 ? '#f59e0b' : '#22c55e');
+                      return (
+                        <div style={{ background: '#e5e7eb', borderRadius: 99, height: 5 }}>
+                          <div style={{ background: color, borderRadius: 99, height: 5, width: `${Math.min(pct, 100)}%`, transition: 'width 300ms' }} />
+                        </div>
+                      );
+                    };
+
                     return (
                       <div style={{ marginTop: 'var(--space-3)', background: bgColor, borderRadius: 'var(--radius-md)', padding: 'var(--space-2) var(--space-3)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <div style={{ marginBottom: 6 }}>
                           <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: txtColor }}>
                             {isFull ? '🔴 Over capacity' : isWarning ? '🟡 Near capacity' : '🟢 Capacity available'}
                           </span>
-                          <span style={{ fontSize: 'var(--font-size-xs)', color: txtColor, fontWeight: 600 }}>{pct}%</span>
                         </div>
-                        <div style={{ background: '#e5e7eb', borderRadius: 99, height: 6, marginBottom: 6 }}>
-                          <div style={{ background: barColor, borderRadius: 99, height: 6, width: `${Math.min(pct, 100)}%`, transition: 'width 300ms' }} />
-                        </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--font-size-xs)', color: txtColor }}>
-                          <span>Booked: <strong>{cap.bookedKg.toFixed(1)} kg</strong></span>
-                          <span>This shipment: <strong>+{thisKg.toFixed(1)} kg</strong></span>
-                          <span>Available: <strong>{availKg.toFixed(1)} kg</strong></span>
-                          <span>Max: <strong>{cap.maxKg.toLocaleString()} kg</strong></span>
-                        </div>
+
+                        {/* Weight bar */}
+                        {cap.maxKg !== null && (
+                          <div style={{ marginBottom: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-xs)', color: txtColor, marginBottom: 3 }}>
+                              <span>Weight — booked <strong>{cap.bookedKg.toFixed(1)}</strong> + this <strong>+{thisKg.toFixed(1)}</strong> kg</span>
+                              <span><strong>{pctKg}%</strong> of {cap.maxKg.toLocaleString()} kg</span>
+                            </div>
+                            <Bar pct={pctKg} fullBar={fullKg} />
+                          </div>
+                        )}
+
+                        {/* Volume bar */}
+                        {cap.maxCbm !== null && (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-xs)', color: txtColor, marginBottom: 3 }}>
+                              <span>Volume — booked <strong>{cap.bookedCbm.toFixed(3)}</strong> + this <strong>+{thisCbm.toFixed(3)}</strong> m³</span>
+                              <span><strong>{pctCbm}%</strong> of {cap.maxCbm} m³</span>
+                            </div>
+                            <Bar pct={pctCbm} fullBar={fullCbm} />
+                          </div>
+                        )}
                       </div>
                     );
                   })()}

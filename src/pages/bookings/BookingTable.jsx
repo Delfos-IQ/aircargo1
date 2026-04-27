@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../../services/firebase.js';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { useAppContext } from '../../context/AppContext.jsx';
-import { formatDate } from '../../utils/dates.js';
+import { formatDate, toYyyyMmDd } from '../../utils/dates.js';
 import { generateFFRMessage } from '../../utils/ffr.js';
 import { generateBookingConfirmationPdf } from '../../utils/pdf.js';
+import { exportBookingsToExcel } from '../../utils/exportBookingsExcel.js';
 import toast from 'react-hot-toast';
 
 /* ── FFR Modal ─────────────────────────────────────── */
@@ -58,18 +59,112 @@ function FfrModal({ booking, onClose }) {
   );
 }
 
+/* ── helpers ───────────────────────────────────────── */
+
+/** Normalises a createdAt value (Firestore Timestamp or ISO string) → 'YYYY-MM-DD' */
+function bookingDateStr(createdAt) {
+  if (!createdAt) return '';
+  if (typeof createdAt.toDate === 'function') return toYyyyMmDd(createdAt.toDate());
+  try {
+    const d = new Date(createdAt);
+    return isNaN(d.getTime()) ? '' : toYyyyMmDd(d);
+  } catch { return ''; }
+}
+
+/** Returns {from, to} strings for a named preset */
+function presetRange(preset) {
+  const now = new Date();
+  const today = toYyyyMmDd(now);
+  switch (preset) {
+    case 'today':
+      return { from: today, to: today };
+    case 'yesterday': {
+      const y = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+      const s = toYyyyMmDd(y);
+      return { from: s, to: s };
+    }
+    case 'this_week': {
+      const dow = now.getUTCDay();
+      const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (dow === 0 ? 6 : dow - 1)));
+      return { from: toYyyyMmDd(monday), to: today };
+    }
+    case 'this_month': {
+      const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      return { from: toYyyyMmDd(first), to: today };
+    }
+    case 'last_month': {
+      const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      const last  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+      return { from: toYyyyMmDd(first), to: toYyyyMmDd(last) };
+    }
+    default: return { from: '', to: '' };
+  }
+}
+
+const DATE_PRESETS = [
+  { key: 'today',      label: 'Today' },
+  { key: 'yesterday',  label: 'Yesterday' },
+  { key: 'this_week',  label: 'This week' },
+  { key: 'this_month', label: 'This month' },
+  { key: 'last_month', label: 'Last month' },
+];
+
 /* ── BookingTable ──────────────────────────────────── */
 export default function BookingTable({ onEdit }) {
-  const { bookings, agentProfiles, flightSchedules, iataAirportCodes } = useAppContext();
+  const { bookings, agentProfiles, flightSchedules, iataAirportCodes, isAdmin, myAgentId } = useAppContext();
   const [search, setSearch] = useState('');
   const [filterAgent, setFilterAgent] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [activePreset, setActivePreset] = useState('');
   const [ffrBooking, setFfrBooking] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const PAGE_SIZE_OPTIONS = [25, 50, 100];
+  const [pageSize, setPageSize] = useState(50);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const applyPreset = (key) => {
+    const { from, to } = presetRange(key);
+    setFilterDateFrom(from);
+    setFilterDateTo(to);
+    setActivePreset(key);
+  };
+
+  const clearAll = () => {
+    setSearch(''); setFilterAgent(''); setFilterStatus('');
+    setFilterDateFrom(''); setFilterDateTo(''); setActivePreset('');
+  };
+
+  const hasFilters = search || filterAgent || filterStatus || filterDateFrom || filterDateTo;
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportBookingsToExcel(filtered, agentProfiles || [], {
+        search, filterAgent, filterStatus, filterDateFrom, filterDateTo,
+      });
+      toast.success(`Excel exported — ${filtered.length} bookings`);
+    } catch (err) {
+      toast.error('Export failed: ' + err.message);
+      console.error(err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Agents only see their own bookings; admins see all
+  const scopedBookings = useMemo(() => {
+    const all = bookings || [];
+    return isAdmin ? all : all.filter(b => b.agent_id === myAgentId);
+  }, [bookings, isAdmin, myAgentId]);
 
   const filtered = useMemo(() => {
-    return (bookings || []).filter(b => {
+    return scopedBookings.filter(b => {
       const q = search.toLowerCase();
       const matchSearch = !q ||
         (b.awb || '').toLowerCase().includes(q) ||
@@ -77,11 +172,32 @@ export default function BookingTable({ onEdit }) {
         (b.consigneeName || '').toLowerCase().includes(q) ||
         (b.origin || '').toLowerCase().includes(q) ||
         (b.destination || '').toLowerCase().includes(q);
-      const matchAgent = !filterAgent || b.selectedAgentProfileId === filterAgent;
+      const matchAgent  = !filterAgent  || b.selectedAgentProfileId === filterAgent;
       const matchStatus = !filterStatus || b.bookingStatus === filterStatus;
-      return matchSearch && matchAgent && matchStatus;
+
+      let matchDate = true;
+      if (filterDateFrom || filterDateTo) {
+        const d = bookingDateStr(b.createdAt);
+        if (filterDateFrom && d < filterDateFrom) matchDate = false;
+        if (filterDateTo   && d > filterDateTo)   matchDate = false;
+      }
+
+      return matchSearch && matchAgent && matchStatus && matchDate;
     });
-  }, [bookings, search, filterAgent, filterStatus]);
+  }, [scopedBookings, search, filterAgent, filterStatus, filterDateFrom, filterDateTo]);
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setCurrentPage(1); }, [search, filterAgent, filterStatus, filterDateFrom, filterDateTo]);
+  // Also reset when page size changes
+  useEffect(() => { setCurrentPage(1); }, [pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage  = Math.min(currentPage, pageCount);
+
+  const paginated = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, safePage, pageSize]);
 
   const agentName = (id) => agentProfiles?.find(a => a.id === id)?.agentName || '—';
 
@@ -119,18 +235,21 @@ export default function BookingTable({ onEdit }) {
     <div>
       {/* Filters */}
       <div className="card" style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-4)' }}>
-        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        {/* Row 1 — text / agent / status */}
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 'var(--space-3)' }}>
           <div className="form-group" style={{ flex: '2 1 200px', margin: 0 }}>
             <label className="form-label">Search</label>
             <input className="form-input" placeholder="AWB, shipper, consignee, route…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <div className="form-group" style={{ flex: '1 1 160px', margin: 0 }}>
-            <label className="form-label">Agent</label>
-            <select className="form-select" value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
-              <option value="">All</option>
-              {(agentProfiles || []).map(a => <option key={a.id} value={a.id}>{a.agentName}</option>)}
-            </select>
-          </div>
+          {isAdmin && (
+            <div className="form-group" style={{ flex: '1 1 160px', margin: 0 }}>
+              <label className="form-label">Agent</label>
+              <select className="form-select" value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
+                <option value="">All agents</option>
+                {(agentProfiles || []).map(a => <option key={a.id} value={a.id}>{a.agentName}</option>)}
+              </select>
+            </div>
+          )}
           <div className="form-group" style={{ flex: '0 1 120px', margin: 0 }}>
             <label className="form-label">Status</label>
             <select className="form-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
@@ -138,17 +257,97 @@ export default function BookingTable({ onEdit }) {
               {['KK','NN','WL','XX','HX'].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          {(search || filterAgent || filterStatus) && (
-            <button className="button button-ghost" style={{ alignSelf: 'flex-end' }} onClick={() => { setSearch(''); setFilterAgent(''); setFilterStatus(''); }}>
-              Clear
+        </div>
+
+        {/* Row 2 — date range + presets + actions */}
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          {/* From */}
+          <div className="form-group" style={{ flex: '0 1 150px', margin: 0 }}>
+            <label className="form-label">From</label>
+            <input
+              type="date"
+              className="form-input"
+              value={filterDateFrom}
+              max={filterDateTo || undefined}
+              onChange={e => { setFilterDateFrom(e.target.value); setActivePreset(''); }}
+            />
+          </div>
+          {/* To */}
+          <div className="form-group" style={{ flex: '0 1 150px', margin: 0 }}>
+            <label className="form-label">To</label>
+            <input
+              type="date"
+              className="form-input"
+              value={filterDateTo}
+              min={filterDateFrom || undefined}
+              onChange={e => { setFilterDateTo(e.target.value); setActivePreset(''); }}
+            />
+          </div>
+          {/* Quick presets */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignSelf: 'flex-end' }}>
+            {DATE_PRESETS.map(p => (
+              <button
+                key={p.key}
+                onClick={() => activePreset === p.key ? applyPreset('') : applyPreset(p.key)}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: 20,
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  border: '1px solid',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s',
+                  background: activePreset === p.key ? 'var(--color-primary)' : 'transparent',
+                  borderColor: activePreset === p.key ? 'var(--color-primary)' : 'var(--color-border)',
+                  color: activePreset === p.key ? '#fff' : 'var(--color-text-secondary)',
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
+
+          {/* Clear */}
+          {hasFilters && (
+            <button className="button button-ghost" style={{ alignSelf: 'flex-end' }} onClick={clearAll}>
+              Clear all
             </button>
           )}
+
+          {/* Export */}
+          <button
+            className="button button-secondary"
+            style={{ alignSelf: 'flex-end', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+            onClick={handleExport}
+            disabled={exporting || filtered.length === 0}
+            title="Export visible bookings to Excel"
+          >
+            {exporting ? (
+              <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" style={{ width: 15, height: 15 }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
+            )}
+            Export Excel
+          </button>
         </div>
       </div>
 
       <div style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-sm)', color: 'var(--color-gray-500)' }}>
         {filtered.length} booking{filtered.length !== 1 ? 's' : ''}
-        {(search || filterAgent || filterStatus) ? ' found' : ' total'}
+        {hasFilters ? ' found' : ' total'}
+        {(filterDateFrom || filterDateTo) && (
+          <span style={{ marginLeft: 8, color: 'var(--color-primary)', fontWeight: 500 }}>
+            {filterDateFrom && filterDateTo
+              ? `${filterDateFrom} → ${filterDateTo}`
+              : filterDateFrom ? `from ${filterDateFrom}` : `until ${filterDateTo}`}
+          </span>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -179,7 +378,7 @@ export default function BookingTable({ onEdit }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((b, i) => (
+                {paginated.map((b, i) => (
                   <tr key={b.id || i}>
                     <td style={{ fontFamily: 'monospace', fontWeight: 600, whiteSpace: 'nowrap' }}>{b.awb || '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(b.createdAt)}</td>
@@ -227,6 +426,96 @@ export default function BookingTable({ onEdit }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pagination bar */}
+      {filtered.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: 'var(--space-3)',
+          marginTop: 'var(--space-3)',
+          padding: '10px 14px',
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-md)',
+          fontSize: 'var(--font-size-sm)',
+          color: 'var(--color-text-secondary)',
+        }}>
+          {/* Left: rows per page */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>Rows per page</span>
+            <select
+              className="form-select"
+              style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8rem' }}
+              value={pageSize}
+              onChange={e => setPageSize(Number(e.target.value))}
+            >
+              {PAGE_SIZE_OPTIONS.map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Center: page info */}
+          <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>
+            {(() => {
+              const start = (safePage - 1) * pageSize + 1;
+              const end   = Math.min(safePage * pageSize, filtered.length);
+              return `${start}–${end} of ${filtered.length}`;
+            })()}
+          </span>
+
+          {/* Right: prev / page numbers / next */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              className="button button-ghost"
+              style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+              disabled={safePage === 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            >
+              ← Prev
+            </button>
+
+            {/* Page number pills — show up to 7 */}
+            {Array.from({ length: pageCount }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === pageCount || Math.abs(p - safePage) <= 2)
+              .reduce((acc, p, idx, arr) => {
+                if (idx > 0 && p - arr[idx - 1] > 1) acc.push('…');
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((item, idx) => item === '…' ? (
+                <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: 'var(--color-gray-400)' }}>…</span>
+              ) : (
+                <button
+                  key={item}
+                  onClick={() => setCurrentPage(item)}
+                  style={{
+                    width: 30, height: 30,
+                    borderRadius: 'var(--radius-sm)',
+                    border: safePage === item ? '1.5px solid var(--color-primary)' : '1px solid transparent',
+                    background: safePage === item ? 'var(--color-primary-light, #eef2ff)' : 'transparent',
+                    color: safePage === item ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                    fontWeight: safePage === item ? 600 : 400,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {item}
+                </button>
+              ))
+            }
+
+            <button
+              className="button button-ghost"
+              style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+              disabled={safePage === pageCount}
+              onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}
+            >
+              Next →
+            </button>
           </div>
         </div>
       )}
