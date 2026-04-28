@@ -26,3 +26,9 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Vite temp files
+vite.config.js.timestamp-*.mjs
+
+# Conversation exports
+conversacion_anterior.txt

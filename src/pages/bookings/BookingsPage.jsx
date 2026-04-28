@@ -1,70 +1,61 @@
-import React from 'react';
-import { useAppContext } from '../../context/AppContext.jsx';
+import React, { useState } from 'react';
 import Layout from '../../components/Layout.jsx';
 import Footer from '../../components/Footer.jsx';
+import BookingForm from './BookingForm.jsx';
+import BookingTable from './BookingTable.jsx';
+
+const VIEWS = { LIST: 'list', NEW: 'new', EDIT: 'edit' };
 
 export default function BookingsPage() {
-  const {
-    bookings, agentProfiles, flightSchedules,
-    awbStockMasters, shipperProfiles, consigneeProfiles,
-  } = useAppContext();
+  const [view, setView] = useState(VIEWS.LIST);
+  const [editingBooking, setEditingBooking] = useState(null);
 
-  const stats = [
-    { label: 'Total Bookings',   value: bookings?.length          ?? '—', accent: 'blue'   },
-    { label: 'Agentes',          value: agentProfiles?.length     ?? '—', accent: 'indigo' },
-    { label: 'Vuelos',           value: flightSchedules?.length   ?? '—', accent: 'green'  },
-    { label: 'Stock AWB',        value: awbStockMasters?.length   ?? '—', accent: 'amber'  },
-  ];
+  const handleEdit = (booking) => {
+    setEditingBooking(booking);
+    setView(VIEWS.EDIT);
+  };
+
+  const handleDone = () => {
+    setEditingBooking(null);
+    setView(VIEWS.LIST);
+  };
 
   return (
     <Layout>
       <div className="page-wrapper">
+        {/* Header */}
         <div className="page-header">
           <div>
-            <h1 className="page-title">Bookings</h1>
-            <p className="page-subtitle">Gestión de reservas y emisión de AWBs</p>
+            <h1 className="page-title">
+              {view === VIEWS.NEW ? 'New Booking' : view === VIEWS.EDIT ? `Edit AWB ${editingBooking?.awb || ''}` : 'Bookings'}
+            </h1>
+            <p className="page-subtitle">Cargo booking management and AWB issuance</p>
           </div>
-          <button className="button button-primary" disabled>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" style={{ width: 16, height: 16 }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Nuevo Booking
-          </button>
-        </div>
-
-        {/* Stats */}
-        <div className="stats-grid" style={{ marginBottom: 'var(--space-6)' }}>
-          {stats.map(({ label, value, accent }) => (
-            <div key={label} className="stat-card">
-              <div className={'stat-card-icon ' + accent}>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" style={{ width: 22, height: 22 }}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-                </svg>
-              </div>
-              <div>
-                <div className="stat-card-value">{value}</div>
-                <div className="stat-card-label">{label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Placeholder contenido Fase 3 */}
-        <div className="card">
-          <div className="card-body" style={{ textAlign: 'center', padding: 'var(--space-12) var(--space-6)' }}>
-            <div className="empty-state-icon" style={{ fontSize: '3rem', opacity: 0.4, margin: '0 auto var(--space-4)' }}>📦</div>
-            <div style={{ fontWeight: 600, color: 'var(--color-gray-700)', marginBottom: 'var(--space-2)' }}>
-              Formulario de Booking
-            </div>
-            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-gray-400)', maxWidth: 400, margin: '0 auto' }}>
-              El formulario de creación y la tabla de bookings se implementarán en la siguiente fase
-              con el nuevo diseño y todas las funcionalidades de AWB, tarifas y cargos.
-            </div>
-            <div className="badge badge-blue" style={{ marginTop: 'var(--space-4)', display: 'inline-flex' }}>
-              Próximamente — Fase 4
-            </div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <button
+              className={'button ' + (view === VIEWS.LIST ? 'button-primary' : 'button-secondary')}
+              onClick={handleDone}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" style={{ width: 16, height: 16 }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+              </svg>
+              View bookings
+            </button>
+            <button
+              className={'button ' + (view === VIEWS.NEW ? 'button-primary' : 'button-secondary')}
+              onClick={() => { setEditingBooking(null); setView(VIEWS.NEW); }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" style={{ width: 16, height: 16 }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              New booking
+            </button>
           </div>
         </div>
+
+        {view === VIEWS.LIST && <BookingTable onEdit={handleEdit} />}
+        {view === VIEWS.NEW  && <BookingForm onSuccess={handleDone} />}
+        {view === VIEWS.EDIT && <BookingForm onSuccess={handleDone} editingBooking={editingBooking} />}
       </div>
       <Footer />
     </Layout>

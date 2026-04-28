@@ -11,13 +11,13 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password) { toast.error('Introduce email y contraseña.'); return; }
+    if (!email || !password) { toast.error('Please enter your email and password.'); return; }
     if (isLoading) return;
     setIsLoading(true);
     try {
       await login(email, password);
     } catch (err) {
-      toast.error('Credenciales incorrectas. Inténtalo de nuevo.');
+      toast.error('Incorrect credentials. Please try again.');
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -26,21 +26,24 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      {/* ── Panel izquierdo: branding ── */}
+      {/* ── Left panel: branding ── */}
       <div className="login-left">
         <div className="login-brand">
-          <img src="/across_logo.png" alt="GSSA Logo" className="login-brand-logo" />
-          <h1 className="login-brand-title">GSSA Cargo<br />Management</h1>
+          {/* AcrossCargo logo */}
+          <div style={{ marginBottom: 'var(--space-8)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <img src="/logo.svg" alt="AcrossCargo" style={{ height: 140, width: 'auto' }} />
+          </div>
+          <h1 className="login-brand-title" style={{ fontSize: 'var(--font-size-2xl)' }}>Cargo Management<br />Platform</h1>
           <p className="login-brand-subtitle">
-            Plataforma de gestión de carga aérea para agentes GSSA
+            Fast and reliable GSSA service dedicated to airlines representation
           </p>
         </div>
 
         <div className="login-features">
           {[
-            { icon: '✈️', text: 'Gestión de bookings y emisión de AWB' },
-            { icon: '📊', text: 'Reportes y analítica de ingresos' },
-            { icon: '🧾', text: 'Facturación por agente' },
+            { icon: '✈️', text: 'Booking management and AWB issuance' },
+            { icon: '📊', text: 'Revenue reporting and analytics' },
+            { icon: '🧾', text: 'Per-agent billing' },
           ].map(({ icon, text }) => (
             <div key={text} className="login-feature">
               <div className="login-feature-icon" style={{ fontSize: '1.1rem' }}>{icon}</div>
@@ -50,11 +53,11 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ── Panel derecho: formulario ── */}
+      {/* ── Right panel: form ── */}
       <div className="login-right">
         <div className="login-form-container">
-          <h2 className="login-form-title">Bienvenido</h2>
-          <p className="login-form-subtitle">Accede a tu cuenta para continuar</p>
+          <h2 className="login-form-title">Welcome</h2>
+          <p className="login-form-subtitle">Sign in to your account to continue</p>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
             <div className="form-group">
@@ -63,7 +66,7 @@ export default function LoginPage() {
                 id="email"
                 type="email"
                 className="form-input"
-                placeholder="tu@email.com"
+                placeholder="you@email.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 autoComplete="email"
@@ -73,7 +76,7 @@ export default function LoginPage() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="password" className="form-label required">Contraseña</label>
+              <label htmlFor="password" className="form-label required">Password</label>
               <div style={{ position: 'relative' }}>
                 <input
                   id="password"
@@ -119,9 +122,9 @@ export default function LoginPage() {
               {isLoading ? (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                   <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-                  Accediendo…
+                  Signing in…
                 </span>
-              ) : 'Iniciar sesión'}
+              ) : 'Sign in'}
             </button>
           </form>
 
@@ -129,7 +132,7 @@ export default function LoginPage() {
             marginTop: 'var(--space-8)', fontSize: 'var(--font-size-xs)',
             color: 'var(--color-gray-400)', textAlign: 'center',
           }}>
-            © {new Date().getFullYear()} GSSA Cargo Management System
+            © {new Date().getFullYear()} AcrossCargo — Cargo Management System
           </p>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useFirestoreCollection } from '../hooks/useFirestoreCollection.js';
 
@@ -26,6 +26,20 @@ export const AppProvider = ({ children }) => {
   const { data: awbStockAllocations } = useFirestoreCollection(enabled ? 'awbStockAllocations' : null);
   const { data: userProfiles }      = useFirestoreCollection(enabled ? 'userProfiles'          : null);
   const { data: iataAirportCodes }  = useFirestoreCollection(enabled ? 'managedIataAirportCodes' : null);
+  const { data: appSettings }       = useFirestoreCollection(enabled ? 'appSettings'             : null);
+
+  // Role helpers — consumed by every page that needs to filter data
+  const isAdmin   = currentUserProfile?.role === 'admin';
+  const myAgentId = currentUserProfile?.agentId || null;
+
+  // Global settings — default 70/30 split until Firestore doc is created
+  const globalSettings = useMemo(() => {
+    const doc = (appSettings || []).find(s => s.id === 'global') || {};
+    return {
+      casSplitPct:    doc.casSplitPct    ?? 70,
+      acrossSplitPct: doc.acrossSplitPct ?? 30,
+    };
+  }, [appSettings]);
 
   const value = {
     // Auth
@@ -34,6 +48,9 @@ export const AppProvider = ({ children }) => {
     isLoading: authLoading,
     login,
     logout,
+    // Role helpers
+    isAdmin,
+    myAgentId,
     // Datos en tiempo real
     bookings,
     agentProfiles,
@@ -46,6 +63,7 @@ export const AppProvider = ({ children }) => {
     awbStockAllocations,
     userProfiles,
     iataAirportCodes,
+    globalSettings,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

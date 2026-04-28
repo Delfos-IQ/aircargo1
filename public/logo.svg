@@ -1,0 +1,34 @@
+<svg width="400" height="480" viewBox="0 0 400 480" xmlns="http://www.w3.org/2000/svg">
+  <!-- Orange A body -->
+  <polygon points="200,18 368,318 368,375 292,375 255,242 145,242 108,375 32,375 32,318" fill="#D44A12"/>
+  <!-- Left foot flare -->
+  <polygon points="32,318 108,375 32,408 4,385" fill="#D44A12"/>
+  <!-- Right foot flare -->
+  <polygon points="368,318 292,375 368,408 396,385" fill="#D44A12"/>
+  <!-- White void inside A (upper triangle) -->
+  <polygon points="200,42 340,285 260,285 200,75 140,285 60,285" fill="white"/>
+  <!-- White crossbar -->
+  <rect x="128" y="218" width="144" height="30" fill="white"/>
+  <!-- Airplane fuselage -->
+  <rect x="193" y="140" width="14" height="110" rx="7" fill="white"/>
+  <!-- Airplane nose -->
+  <ellipse cx="200" cy="136" rx="7" ry="18" fill="white"/>
+  <!-- Left wing -->
+  <path d="M193,186 L48,232 L48,250 L193,208 Z" fill="white"/>
+  <!-- Right wing -->
+  <path d="M207,186 L352,232 L352,250 L207,208 Z" fill="white"/>
+  <!-- Left winglet -->
+  <rect x="42" y="230" width="14" height="24" rx="3" fill="white"/>
+  <!-- Right winglet -->
+  <rect x="344" y="230" width="14" height="24" rx="3" fill="white"/>
+  <!-- Tail fin -->
+  <path d="M196,248 L204,248 L206,290 L194,290 Z" fill="white"/>
+  <!-- Left stabilizer -->
+  <path d="M194,272 L136,290 L136,300 L194,284 Z" fill="white"/>
+  <!-- Right stabilizer -->
+  <path d="M206,272 L264,290 L264,300 L206,284 Z" fill="white"/>
+  <!-- GSSA label -->
+  <text x="200" y="215" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="20" fill="#1B2766" letter-spacing="5">GSSA</text>
+  <!-- ACROSSCARGO label -->
+  <text x="200" y="448" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="36" fill="#1B2766" letter-spacing="2">ACROSSCARGO</text>
+</svg>

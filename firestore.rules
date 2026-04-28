@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Reads the caller's userProfile document (stored with Firebase UID as doc ID).
+    // Uses get() which counts as an extra read but is cached within the same request.
+    function callerProfile() {
+      return get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && callerProfile().role == 'admin';
+    }
+
+    // The IATA agent ID linked to this user account (null for admins)
+    function myAgentId() {
+      return callerProfile().agentId;
+    }
+
+    // ── User Profiles ──────────────────────────────────────────────────────────
+    // Document ID MUST equal the Firebase UID (enforced by UsersPage on create).
+    match /userProfiles/{uid} {
+      // Users can read their own profile. Admins can read all profiles.
+      allow read:   if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      // Only admins can create / update / delete user profiles.
+      allow write:  if isAdmin();
+    }
+
+    // ── Bookings ───────────────────────────────────────────────────────────────
+    match /bookings/{bookingId} {
+      // Admin: full access.
+      // Agent: read / create / update only their own bookings (matched by agent_id).
+      allow read:   if isAuthenticated()
+                    && (isAdmin() || resource.data.agent_id == myAgentId());
+      allow create: if isAuthenticated()
+                    && (isAdmin() || request.resource.data.agent_id == myAgentId());
+      allow update: if isAuthenticated()
+                    && (isAdmin() || resource.data.agent_id == myAgentId());
+      allow delete: if isAdmin();
+    }
+
+    // ── Agent Profiles ─────────────────────────────────────────────────────────
+    match /agentProfiles/{docId} {
+      allow read:  if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── Shippers ───────────────────────────────────────────────────────────────
+    match /shippers/{docId} {
+      allow read:  if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── Consignees ─────────────────────────────────────────────────────────────
+    match /consignees/{docId} {
+      allow read:  if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── GHA Profiles ───────────────────────────────────────────────────────────
+    match /ghaProfiles/{docId} {
+      allow read:  if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── Flight Schedules ───────────────────────────────────────────────────────
+    match /flightSchedules/{docId} {
+      allow read:  if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── Rates ──────────────────────────────────────────────────────────────────
+    match /rates/{docId} {
+      allow read:  if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── AWB Stock Allocations ──────────────────────────────────────────────────
+    // Agents need read access (to see available stock) and update access
+    // (to increment usedCount when a booking consumes an AWB number).
+    // Only admins can create or delete allocations.
+    match /awbStockAllocations/{docId} {
+      allow read:          if isAuthenticated();
+      allow update:        if isAuthenticated();   // agents update usedCount
+      allow create, delete: if isAdmin();
+    }
+
+    // ── IATA Airport Codes ─────────────────────────────────────────────────────
+    match /iataAirportCodes/{docId} {
+      allow read:  if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── Deny everything else ───────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+  }
+}

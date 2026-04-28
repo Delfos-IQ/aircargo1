@@ -1,0 +1,21 @@
+name = "acrosscargo-notifications"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# ── Non-secret configuration vars ──────────────────────────
+[vars]
+FROM_EMAIL    = "AcrossCargo <notifications@acrosscargo.com>"
+ALLOWED_ORIGIN = "https://your-app.web.app"    # ← replace with your Firebase Hosting URL
+
+# ── Secrets (never stored here — set via CLI) ───────────────
+# Run these commands once before deploying:
+#
+#   wrangler secret put RESEND_API_KEY
+#   wrangler secret put ADMIN_EMAIL
+#   wrangler secret put WORKER_SECRET
+#
+# RESEND_API_KEY  → your key from resend.com/api-keys
+# ADMIN_EMAIL     → email that receives AWB stock alerts
+# WORKER_SECRET   → any random string (e.g. openssl rand -hex 32)
+#                   Must match VITE_WORKER_SECRET in your React .env

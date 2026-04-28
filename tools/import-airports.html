@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcrossCargo — Import IATA Airports</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #1a1a1a; min-height: 100vh; }
+  header { background: #1B2766; color: white; padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
+  .logo-icon { width: 36px; height: 42px; }
+  .logo-text { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.08em; color: white; }
+  .logo-sub { font-size: 0.72rem; color: rgba(255,255,255,0.55); letter-spacing: 0.04em; margin-top: 1px; }
+  .badge { background: #C1440E; color: white; font-size: 0.65rem; font-weight: 700; padding: 3px 8px; border-radius: 12px; letter-spacing: 0.05em; margin-left: 8px; }
+  main { max-width: 700px; margin: 40px auto; padding: 0 20px; }
+  .card { background: white; border-radius: 12px; padding: 28px 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; font-weight: 700; color: #1B2766; margin-bottom: 6px; }
+  .desc { font-size: 0.87rem; color: #555; margin-bottom: 20px; line-height: 1.5; }
+  label { display: block; font-size: 0.8rem; font-weight: 600; color: #444; margin-bottom: 4px; margin-top: 14px; }
+  input { width: 100%; padding: 9px 12px; border: 1px solid #d0d0d0; border-radius: 7px; font-size: 0.87rem; font-family: monospace; }
+  input:focus { outline: none; border-color: #C1440E; box-shadow: 0 0 0 3px rgba(193,68,14,0.12); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .btn { display: block; width: 100%; margin-top: 24px; padding: 13px; background: #C1440E; color: white; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 700; cursor: pointer; letter-spacing: 0.03em; transition: background 0.15s; }
+  .btn:hover:not(:disabled) { background: #a83a0c; }
+  .btn:disabled { background: #d0a090; cursor: not-allowed; }
+  .progress-wrap { margin-top: 20px; display: none; }
+  .progress-label { font-size: 0.83rem; color: #555; margin-bottom: 6px; }
+  .progress-bar-track { background: #f0e0d8; border-radius: 99px; height: 10px; overflow: hidden; }
+  .progress-bar-fill { background: #C1440E; height: 100%; width: 0%; border-radius: 99px; transition: width 0.2s; }
+  .log { margin-top: 18px; background: #1a1a1a; color: #aaffaa; font-family: monospace; font-size: 0.78rem; padding: 14px 16px; border-radius: 8px; max-height: 220px; overflow-y: auto; display: none; white-space: pre-wrap; }
+  .status-done { background: #edfdf4; border: 1px solid #6dd89e; border-radius: 8px; padding: 14px 18px; margin-top: 16px; display: none; }
+  .status-done h3 { color: #1a7a42; font-size: 0.95rem; margin-bottom: 4px; }
+  .status-done p { color: #2a8a52; font-size: 0.83rem; }
+  .status-error { background: #fdf0ee; border: 1px solid #e09080; border-radius: 8px; padding: 14px 18px; margin-top: 16px; display: none; }
+  .status-error h3 { color: #b03020; font-size: 0.95rem; margin-bottom: 4px; }
+  .status-error p { color: #903020; font-size: 0.83rem; font-family: monospace; }
+  .info-box { background: #f0f4ff; border: 1px solid #c0ccf0; border-radius: 8px; padding: 14px 18px; font-size: 0.83rem; color: #333; line-height: 1.6; }
+  .info-box strong { color: #1B2766; }
+  .step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; font-size: 0.83rem; color: #444; }
+  .step-num { background: #1B2766; color: white; border-radius: 50%; width: 22px; height: 22px; min-width: 22px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; margin-top: 1px; }
+  .airport-count { font-size: 2.2rem; font-weight: 800; color: #C1440E; }
+  .airport-count-label { font-size: 0.78rem; color: #888; font-weight: 500; }
+  .stats { display: flex; gap: 24px; margin-bottom: 20px; }
+  .stat { text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg class="logo-icon" viewBox="0 0 100 115" xmlns="http://www.w3.org/2000/svg">
+    <path d="M50 3 L97 112 H68 V76 H32 V112 H3 Z" fill="#C1440E"/>
+    <ellipse cx="50" cy="36" rx="6" ry="22" fill="white"/>
+    <path d="M6 74 H20 L50 60 L80 74 H94 L80 70 L50 56 L20 70 Z" fill="white"/>
+    <path d="M35 90 H42 L50 83 L58 90 H65 L58 87 L50 80 L42 87 Z" fill="white"/>
+  </svg>
+  <div>
+    <div class="logo-text">ACROSSCARGO <span class="badge">IMPORT TOOL</span></div>
+    <div class="logo-sub">IATA Airport Codes — One-time import utility</div>
+  </div>
+</header>
+
+<main>
+
+  <div class="card">
+    <div class="stats">
+      <div class="stat">
+        <div class="airport-count" id="airportCountStat">150</div>
+        <div class="airport-count-label">airports ready</div>
+      </div>
+      <div class="stat">
+        <div class="airport-count" style="color:#1B2766; font-size:1.4rem">IATA</div>
+        <div class="airport-count-label">cargo airports</div>
+      </div>
+      <div class="stat">
+        <div class="airport-count" style="color:#1B2766; font-size:1.4rem">🌍</div>
+        <div class="airport-count-label">worldwide</div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>What this tool does:</strong> Imports 150 major international cargo airports into your
+      <code>managedIataAirportCodes</code> Firestore collection. Each airport is stored with its
+      IATA code as document ID, so re-running is safe — existing entries are overwritten, not duplicated.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Firebase Configuration</h2>
+    <p class="desc">Enter your Firebase project credentials. Find these in Firebase Console → Project Settings → Your apps → SDK setup and configuration.</p>
+
+    <div class="step"><div class="step-num">1</div><span>Go to <strong>Firebase Console → Project Settings → General</strong></span></div>
+    <div class="step"><div class="step-num">2</div><span>Scroll to <strong>"Your apps"</strong>, click the web app <code>&lt;/&gt;</code></span></div>
+    <div class="step"><div class="step-num">3</div><span>Copy the values from <strong>firebaseConfig</strong> into the fields below</span></div>
+
+    <div class="grid2">
+      <div>
+        <label>API Key</label>
+        <input id="apiKey" placeholder="AIzaSy..." />
+      </div>
+      <div>
+        <label>Project ID</label>
+        <input id="projectId" placeholder="gssa-cargo-v2" />
+      </div>
+    </div>
+    <div class="grid2">
+      <div>
+        <label>Auth Domain</label>
+        <input id="authDomain" placeholder="your-project.firebaseapp.com" />
+      </div>
+      <div>
+        <label>Storage Bucket</label>
+        <input id="storageBucket" placeholder="your-project.appspot.com" />
+      </div>
+    </div>
+    <div class="grid2">
+      <div>
+        <label>Messaging Sender ID</label>
+        <input id="messagingSenderId" placeholder="123456789" />
+      </div>
+      <div>
+        <label>App ID</label>
+        <input id="appId" placeholder="1:123:web:abc..." />
+      </div>
+    </div>
+
+    <button class="btn" id="importBtn" onclick="runImport()">Import 150 Airports to Firestore →</button>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-label" id="progressLabel">Importing...</div>
+      <div class="progress-bar-track"><div class="progress-bar-fill" id="progressBar"></div></div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="status-done" id="statusDone">
+      <h3>✅ Import complete!</h3>
+      <p id="doneMsg"></p>
+    </div>
+    <div class="status-error" id="statusError">
+      <h3>❌ Import failed</h3>
+      <p id="errorMsg"></p>
+    </div>
+  </div>
+
+</main>
+
+<script type="module">
+// ─── Airport data ────────────────────────────────────────────────────────────
+// Fields: code, name, city, country
+const AIRPORTS = [
+  // EUROPE
+  { code: 'MAD', name: 'Adolfo Suárez Madrid–Barajas Airport', city: 'Madrid', country: 'Spain' },
+  { code: 'BCN', name: 'Josep Tarradellas Barcelona–El Prat Airport', city: 'Barcelona', country: 'Spain' },
+  { code: 'VLC', name: 'Valencia Airport', city: 'Valencia', country: 'Spain' },
+  { code: 'AGP', name: 'Málaga–Costa del Sol Airport', city: 'Málaga', country: 'Spain' },
+  { code: 'BIO', name: 'Bilbao Airport', city: 'Bilbao', country: 'Spain' },
+  { code: 'SVQ', name: 'Seville Airport', city: 'Seville', country: 'Spain' },
+  { code: 'PMI', name: 'Palma de Mallorca Airport', city: 'Palma de Mallorca', country: 'Spain' },
+  { code: 'LPA', name: 'Gran Canaria Airport', city: 'Las Palmas', country: 'Spain' },
+  { code: 'TFN', name: 'Tenerife North Airport', city: 'Tenerife', country: 'Spain' },
+  { code: 'TFS', name: 'Tenerife South Airport', city: 'Tenerife', country: 'Spain' },
+  { code: 'LIS', name: 'Humberto Delgado Airport', city: 'Lisbon', country: 'Portugal' },
+  { code: 'OPO', name: 'Francisco Sá Carneiro Airport', city: 'Porto', country: 'Portugal' },
+  { code: 'LHR', name: 'London Heathrow Airport', city: 'London', country: 'United Kingdom' },
+  { code: 'LGW', name: 'London Gatwick Airport', city: 'London', country: 'United Kingdom' },
+  { code: 'STN', name: 'London Stansted Airport', city: 'London', country: 'United Kingdom' },
+  { code: 'MAN', name: 'Manchester Airport', city: 'Manchester', country: 'United Kingdom' },
+  { code: 'CDG', name: 'Charles de Gaulle Airport', city: 'Paris', country: 'France' },
+  { code: 'ORY', name: 'Paris Orly Airport', city: 'Paris', country: 'France' },
+  { code: 'LYS', name: 'Lyon–Saint-Exupéry Airport', city: 'Lyon', country: 'France' },
+  { code: 'MRS', name: 'Marseille Provence Airport', city: 'Marseille', country: 'France' },
+  { code: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany' },
+  { code: 'MUC', name: 'Munich Airport', city: 'Munich', country: 'Germany' },
+  { code: 'DUS', name: 'Düsseldorf Airport', city: 'Düsseldorf', country: 'Germany' },
+  { code: 'HAM', name: 'Hamburg Airport', city: 'Hamburg', country: 'Germany' },
+  { code: 'CGN', name: 'Cologne Bonn Airport', city: 'Cologne', country: 'Germany' },
+  { code: 'BER', name: 'Berlin Brandenburg Airport', city: 'Berlin', country: 'Germany' },
+  { code: 'LEJ', name: 'Leipzig/Halle Airport', city: 'Leipzig', country: 'Germany' },
+  { code: 'AMS', name: 'Amsterdam Airport Schiphol', city: 'Amsterdam', country: 'Netherlands' },
+  { code: 'BRU', name: 'Brussels Airport', city: 'Brussels', country: 'Belgium' },
+  { code: 'LGG', name: 'Liège Airport', city: 'Liège', country: 'Belgium' },
+  { code: 'ZUR', name: 'Zurich Airport', city: 'Zurich', country: 'Switzerland' },
+  { code: 'GVA', name: 'Geneva Airport', city: 'Geneva', country: 'Switzerland' },
+  { code: 'VIE', name: 'Vienna International Airport', city: 'Vienna', country: 'Austria' },
+  { code: 'FCO', name: 'Leonardo da Vinci International Airport', city: 'Rome', country: 'Italy' },
+  { code: 'MXP', name: 'Milan Malpensa Airport', city: 'Milan', country: 'Italy' },
+  { code: 'VCE', name: 'Venice Marco Polo Airport', city: 'Venice', country: 'Italy' },
+  { code: 'BGY', name: 'Bergamo Orio al Serio Airport', city: 'Bergamo', country: 'Italy' },
+  { code: 'ATH', name: 'Athens International Airport', city: 'Athens', country: 'Greece' },
+  { code: 'SKG', name: 'Thessaloniki Airport', city: 'Thessaloniki', country: 'Greece' },
+  { code: 'IST', name: 'Istanbul Airport', city: 'Istanbul', country: 'Turkey' },
+  { code: 'SAW', name: 'Sabiha Gökçen International Airport', city: 'Istanbul', country: 'Turkey' },
+  { code: 'ESB', name: 'Ankara Esenboğa Airport', city: 'Ankara', country: 'Turkey' },
+  { code: 'WAW', name: 'Warsaw Chopin Airport', city: 'Warsaw', country: 'Poland' },
+  { code: 'PRG', name: 'Václav Havel Airport Prague', city: 'Prague', country: 'Czech Republic' },
+  { code: 'BUD', name: 'Budapest Ferenc Liszt International Airport', city: 'Budapest', country: 'Hungary' },
+  { code: 'ARN', name: 'Stockholm Arlanda Airport', city: 'Stockholm', country: 'Sweden' },
+  { code: 'CPH', name: 'Copenhagen Airport', city: 'Copenhagen', country: 'Denmark' },
+  { code: 'OSL', name: 'Oslo Gardermoen Airport', city: 'Oslo', country: 'Norway' },
+  { code: 'HEL', name: 'Helsinki-Vantaa Airport', city: 'Helsinki', country: 'Finland' },
+  { code: 'DUB', name: 'Dublin Airport', city: 'Dublin', country: 'Ireland' },
+  { code: 'SVO', name: 'Sheremetyevo International Airport', city: 'Moscow', country: 'Russia' },
+  { code: 'DME', name: 'Moscow Domodedovo Airport', city: 'Moscow', country: 'Russia' },
+  { code: 'LED', name: 'Pulkovo Airport', city: 'St. Petersburg', country: 'Russia' },
+  { code: 'RIX', name: 'Riga International Airport', city: 'Riga', country: 'Latvia' },
+  { code: 'TLL', name: 'Lennart Meri Tallinn Airport', city: 'Tallinn', country: 'Estonia' },
+  { code: 'VNO', name: 'Vilnius Airport', city: 'Vilnius', country: 'Lithuania' },
+  { code: 'KIV', name: 'Chișinău International Airport', city: 'Chisinau', country: 'Moldova' },
+  { code: 'OTP', name: 'Henri Coandă International Airport', city: 'Bucharest', country: 'Romania' },
+  { code: 'SOF', name: 'Sofia Airport', city: 'Sofia', country: 'Bulgaria' },
+  { code: 'ZAG', name: 'Zagreb Airport', city: 'Zagreb', country: 'Croatia' },
+  { code: 'LJU', name: 'Ljubljana Jože Pučnik Airport', city: 'Ljubljana', country: 'Slovenia' },
+  { code: 'BEG', name: 'Belgrade Nikola Tesla Airport', city: 'Belgrade', country: 'Serbia' },
+
+  // NORTH AFRICA & MIDDLE EAST
+  { code: 'CMN', name: 'Mohammed V International Airport', city: 'Casablanca', country: 'Morocco' },
+  { code: 'RAK', name: 'Marrakesh Menara Airport', city: 'Marrakesh', country: 'Morocco' },
+  { code: 'TNG', name: 'Tangier Ibn Battuta Airport', city: 'Tangier', country: 'Morocco' },
+  { code: 'ALG', name: 'Houari Boumediene Airport', city: 'Algiers', country: 'Algeria' },
+  { code: 'TUN', name: 'Tunis-Carthage International Airport', city: 'Tunis', country: 'Tunisia' },
+  { code: 'CAI', name: 'Cairo International Airport', city: 'Cairo', country: 'Egypt' },
+  { code: 'HRG', name: 'Hurghada International Airport', city: 'Hurghada', country: 'Egypt' },
+  { code: 'DXB', name: 'Dubai International Airport', city: 'Dubai', country: 'UAE' },
+  { code: 'AUH', name: 'Abu Dhabi International Airport', city: 'Abu Dhabi', country: 'UAE' },
+  { code: 'SHJ', name: 'Sharjah International Airport', city: 'Sharjah', country: 'UAE' },
+  { code: 'DOH', name: 'Hamad International Airport', city: 'Doha', country: 'Qatar' },
+  { code: 'BAH', name: 'Bahrain International Airport', city: 'Manama', country: 'Bahrain' },
+  { code: 'KWI', name: 'Kuwait International Airport', city: 'Kuwait City', country: 'Kuwait' },
+  { code: 'RUH', name: 'King Khalid International Airport', city: 'Riyadh', country: 'Saudi Arabia' },
+  { code: 'JED', name: 'King Abdulaziz International Airport', city: 'Jeddah', country: 'Saudi Arabia' },
+  { code: 'DMM', name: 'King Fahd International Airport', city: 'Dammam', country: 'Saudi Arabia' },
+  { code: 'AMM', name: 'Queen Alia International Airport', city: 'Amman', country: 'Jordan' },
+  { code: 'BEY', name: 'Beirut Rafic Hariri International Airport', city: 'Beirut', country: 'Lebanon' },
+  { code: 'TLV', name: 'Ben Gurion International Airport', city: 'Tel Aviv', country: 'Israel' },
+  { code: 'MCT', name: 'Muscat International Airport', city: 'Muscat', country: 'Oman' },
+
+  // SUB-SAHARAN AFRICA
+  { code: 'JNB', name: 'O.R. Tambo International Airport', city: 'Johannesburg', country: 'South Africa' },
+  { code: 'CPT', name: 'Cape Town International Airport', city: 'Cape Town', country: 'South Africa' },
+  { code: 'NBO', name: 'Jomo Kenyatta International Airport', city: 'Nairobi', country: 'Kenya' },
+  { code: 'ADD', name: 'Addis Ababa Bole International Airport', city: 'Addis Ababa', country: 'Ethiopia' },
+  { code: 'LOS', name: 'Murtala Muhammed International Airport', city: 'Lagos', country: 'Nigeria' },
+  { code: 'ABJ', name: 'Félix-Houphouët-Boigny International Airport', city: 'Abidjan', country: 'Côte d\'Ivoire' },
+  { code: 'ACC', name: 'Kotoka International Airport', city: 'Accra', country: 'Ghana' },
+  { code: 'DAK', name: 'Léopold Sédar Senghor International Airport', city: 'Dakar', country: 'Senegal' },
+  { code: 'DKR', name: 'Blaise Diagne International Airport', city: 'Dakar', country: 'Senegal' },
+  { code: 'DAR', name: 'Julius Nyerere International Airport', city: 'Dar es Salaam', country: 'Tanzania' },
+  { code: 'LUN', name: 'Kenneth Kaunda International Airport', city: 'Lusaka', country: 'Zambia' },
+
+  // ASIA PACIFIC
+  { code: 'PEK', name: 'Beijing Capital International Airport', city: 'Beijing', country: 'China' },
+  { code: 'PKX', name: 'Beijing Daxing International Airport', city: 'Beijing', country: 'China' },
+  { code: 'PVG', name: 'Shanghai Pudong International Airport', city: 'Shanghai', country: 'China' },
+  { code: 'SHA', name: 'Shanghai Hongqiao International Airport', city: 'Shanghai', country: 'China' },
+  { code: 'CAN', name: 'Guangzhou Baiyun International Airport', city: 'Guangzhou', country: 'China' },
+  { code: 'SZX', name: 'Shenzhen Bao\'an International Airport', city: 'Shenzhen', country: 'China' },
+  { code: 'HKG', name: 'Hong Kong International Airport', city: 'Hong Kong', country: 'China' },
+  { code: 'NKG', name: 'Nanjing Lukou International Airport', city: 'Nanjing', country: 'China' },
+  { code: 'WUH', name: 'Wuhan Tianhe International Airport', city: 'Wuhan', country: 'China' },
+  { code: 'CTU', name: 'Chengdu Tianfu International Airport', city: 'Chengdu', country: 'China' },
+  { code: 'XIY', name: 'Xi\'an Xianyang International Airport', city: "Xi'an", country: 'China' },
+  { code: 'NGB', name: 'Ningbo Lishe International Airport', city: 'Ningbo', country: 'China' },
+  { code: 'TSN', name: 'Tianjin Binhai International Airport', city: 'Tianjin', country: 'China' },
+  { code: 'TAO', name: 'Qingdao Jiaodong International Airport', city: 'Qingdao', country: 'China' },
+  { code: 'ICN', name: 'Incheon International Airport', city: 'Seoul', country: 'South Korea' },
+  { code: 'GMP', name: 'Gimpo International Airport', city: 'Seoul', country: 'South Korea' },
+  { code: 'NRT', name: 'Tokyo Narita International Airport', city: 'Tokyo', country: 'Japan' },
+  { code: 'HND', name: 'Tokyo Haneda Airport', city: 'Tokyo', country: 'Japan' },
+  { code: 'KIX', name: 'Kansai International Airport', city: 'Osaka', country: 'Japan' },
+  { code: 'NGO', name: 'Chubu Centrair International Airport', city: 'Nagoya', country: 'Japan' },
+  { code: 'TPE', name: 'Taiwan Taoyuan International Airport', city: 'Taipei', country: 'Taiwan' },
+  { code: 'SIN', name: 'Singapore Changi Airport', city: 'Singapore', country: 'Singapore' },
+  { code: 'KUL', name: 'Kuala Lumpur International Airport', city: 'Kuala Lumpur', country: 'Malaysia' },
+  { code: 'CGK', name: 'Soekarno-Hatta International Airport', city: 'Jakarta', country: 'Indonesia' },
+  { code: 'BKK', name: 'Suvarnabhumi Airport', city: 'Bangkok', country: 'Thailand' },
+  { code: 'DMK', name: 'Don Mueang International Airport', city: 'Bangkok', country: 'Thailand' },
+  { code: 'MNL', name: 'Ninoy Aquino International Airport', city: 'Manila', country: 'Philippines' },
+  { code: 'HAN', name: 'Noi Bai International Airport', city: 'Hanoi', country: 'Vietnam' },
+  { code: 'SGN', name: 'Tan Son Nhat International Airport', city: 'Ho Chi Minh City', country: 'Vietnam' },
+  { code: 'BOM', name: 'Chhatrapati Shivaji Maharaj International Airport', city: 'Mumbai', country: 'India' },
+  { code: 'DEL', name: 'Indira Gandhi International Airport', city: 'New Delhi', country: 'India' },
+  { code: 'BLR', name: 'Kempegowda International Airport', city: 'Bangalore', country: 'India' },
+  { code: 'HYD', name: 'Rajiv Gandhi International Airport', city: 'Hyderabad', country: 'India' },
+  { code: 'MAA', name: 'Chennai International Airport', city: 'Chennai', country: 'India' },
+  { code: 'CCU', name: 'Netaji Subhas Chandra Bose International Airport', city: 'Kolkata', country: 'India' },
+  { code: 'KHI', name: 'Jinnah International Airport', city: 'Karachi', country: 'Pakistan' },
+  { code: 'ISB', name: 'Islamabad International Airport', city: 'Islamabad', country: 'Pakistan' },
+  { code: 'LHE', name: 'Allama Iqbal International Airport', city: 'Lahore', country: 'Pakistan' },
+  { code: 'DAC', name: 'Hazrat Shahjalal International Airport', city: 'Dhaka', country: 'Bangladesh' },
+  { code: 'SYD', name: 'Sydney Kingsford Smith Airport', city: 'Sydney', country: 'Australia' },
+  { code: 'MEL', name: 'Melbourne Airport', city: 'Melbourne', country: 'Australia' },
+  { code: 'BNE', name: 'Brisbane Airport', city: 'Brisbane', country: 'Australia' },
+  { code: 'PER', name: 'Perth Airport', city: 'Perth', country: 'Australia' },
+  { code: 'AKL', name: 'Auckland Airport', city: 'Auckland', country: 'New Zealand' },
+
+  // AMERICAS
+  { code: 'JFK', name: 'John F. Kennedy International Airport', city: 'New York', country: 'USA' },
+  { code: 'EWR', name: 'Newark Liberty International Airport', city: 'New York', country: 'USA' },
+  { code: 'LGA', name: 'LaGuardia Airport', city: 'New York', country: 'USA' },
+  { code: 'LAX', name: 'Los Angeles International Airport', city: 'Los Angeles', country: 'USA' },
+  { code: 'ORD', name: "O'Hare International Airport", city: 'Chicago', country: 'USA' },
+  { code: 'MDW', name: 'Chicago Midway International Airport', city: 'Chicago', country: 'USA' },
+  { code: 'MIA', name: 'Miami International Airport', city: 'Miami', country: 'USA' },
+  { code: 'ATL', name: 'Hartsfield-Jackson Atlanta International Airport', city: 'Atlanta', country: 'USA' },
+  { code: 'DFW', name: 'Dallas/Fort Worth International Airport', city: 'Dallas', country: 'USA' },
+  { code: 'IAH', name: 'George Bush Intercontinental Airport', city: 'Houston', country: 'USA' },
+  { code: 'SFO', name: 'San Francisco International Airport', city: 'San Francisco', country: 'USA' },
+  { code: 'BOS', name: 'Logan International Airport', city: 'Boston', country: 'USA' },
+  { code: 'SEA', name: 'Seattle-Tacoma International Airport', city: 'Seattle', country: 'USA' },
+  { code: 'MCO', name: 'Orlando International Airport', city: 'Orlando', country: 'USA' },
+  { code: 'DEN', name: 'Denver International Airport', city: 'Denver', country: 'USA' },
+  { code: 'LAS', name: 'Harry Reid International Airport', city: 'Las Vegas', country: 'USA' },
+  { code: 'YYZ', name: 'Toronto Pearson International Airport', city: 'Toronto', country: 'Canada' },
+  { code: 'YVR', name: 'Vancouver International Airport', city: 'Vancouver', country: 'Canada' },
+  { code: 'YUL', name: 'Montréal-Trudeau International Airport', city: 'Montreal', country: 'Canada' },
+  { code: 'GRU', name: 'São Paulo–Guarulhos International Airport', city: 'São Paulo', country: 'Brazil' },
+  { code: 'VCP', name: 'Campinas Viracopos International Airport', city: 'Campinas', country: 'Brazil' },
+  { code: 'GIG', name: 'Rio de Janeiro–Galeão International Airport', city: 'Rio de Janeiro', country: 'Brazil' },
+  { code: 'EZE', name: 'Ministro Pistarini International Airport', city: 'Buenos Aires', country: 'Argentina' },
+  { code: 'SCL', name: 'Arturo Merino Benítez International Airport', city: 'Santiago', country: 'Chile' },
+  { code: 'BOG', name: 'El Dorado International Airport', city: 'Bogotá', country: 'Colombia' },
+  { code: 'MDE', name: 'José María Córdova International Airport', city: 'Medellín', country: 'Colombia' },
+  { code: 'LIM', name: 'Jorge Chávez International Airport', city: 'Lima', country: 'Peru' },
+  { code: 'UIO', name: 'Mariscal Sucre International Airport', city: 'Quito', country: 'Ecuador' },
+  { code: 'GYE', name: 'José Joaquín de Olmedo International Airport', city: 'Guayaquil', country: 'Ecuador' },
+  { code: 'MEX', name: 'Benito Juárez International Airport', city: 'Mexico City', country: 'Mexico' },
+  { code: 'MTY', name: 'General Mariano Escobedo International Airport', city: 'Monterrey', country: 'Mexico' },
+  { code: 'GDL', name: 'Miguel Hidalgo y Costilla International Airport', city: 'Guadalajara', country: 'Mexico' },
+  { code: 'PTY', name: 'Tocumen International Airport', city: 'Panama City', country: 'Panama' },
+  { code: 'MBJ', name: 'Sangster International Airport', city: 'Montego Bay', country: 'Jamaica' },
+  { code: 'SJU', name: 'Luis Muñoz Marín International Airport', city: 'San Juan', country: 'Puerto Rico' },
+
+  // CANARY ISLANDS & ISLANDS
+  { code: 'ACE', name: 'Lanzarote Airport', city: 'Lanzarote', country: 'Spain' },
+  { code: 'FUE', name: 'Fuerteventura Airport', city: 'Fuerteventura', country: 'Spain' },
+  { code: 'SPC', name: 'La Palma Airport', city: 'La Palma', country: 'Spain' },
+  { code: 'GMZ', name: 'La Gomera Airport', city: 'La Gomera', country: 'Spain' },
+  { code: 'IBZ', name: 'Ibiza Airport', city: 'Ibiza', country: 'Spain' },
+  { code: 'MAH', name: 'Menorca Airport', city: 'Menorca', country: 'Spain' },
+];
+
+window.AIRPORTS = AIRPORTS;
+document.getElementById('airportCountStat').textContent = AIRPORTS.length;
+// ─────────────────────────────────────────────────────────────────────────────
+
+window.runImport = async function() {
+  const btn       = document.getElementById('importBtn');
+  const log       = document.getElementById('log');
+  const pWrap     = document.getElementById('progressWrap');
+  const pBar      = document.getElementById('progressBar');
+  const pLabel    = document.getElementById('progressLabel');
+  const statusOk  = document.getElementById('statusDone');
+  const statusErr = document.getElementById('statusError');
+
+  const cfg = {
+    apiKey:            document.getElementById('apiKey').value.trim(),
+    projectId:         document.getElementById('projectId').value.trim(),
+    authDomain:        document.getElementById('authDomain').value.trim(),
+    storageBucket:     document.getElementById('storageBucket').value.trim(),
+    messagingSenderId: document.getElementById('messagingSenderId').value.trim(),
+    appId:             document.getElementById('appId').value.trim(),
+  };
+
+  if (!cfg.apiKey || !cfg.projectId) {
+    alert('Please fill in at least API Key and Project ID.');
+    return;
+  }
+
+  btn.disabled = true;
+  log.style.display = 'block';
+  pWrap.style.display = 'block';
+  statusOk.style.display = 'none';
+  statusErr.style.display = 'none';
+  log.textContent = '';
+
+  const logLine = (msg) => { log.textContent += msg + '\n'; log.scrollTop = log.scrollHeight; };
+
+  try {
+    logLine('Loading Firebase SDK...');
+    const { initializeApp, getApps, getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    const { getFirestore, doc, writeBatch, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+    const app = getApps().length ? getApp() : initializeApp(cfg);
+    const db  = getFirestore(app);
+
+    logLine(`Firebase connected. Importing ${AIRPORTS.length} airports...`);
+
+    const BATCH_SIZE = 450; // Firestore batch limit is 500
+    let imported = 0;
+    const total = AIRPORTS.length;
+
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      const slice = AIRPORTS.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      slice.forEach(airport => {
+        const ref = doc(db, 'managedIataAirportCodes', airport.code);
+        batch.set(ref, {
+          code:    airport.code,
+          name:    airport.name,
+          city:    airport.city,
+          country: airport.country,
+        });
+      });
+      await batch.commit();
+      imported += slice.length;
+      const pct = Math.round((imported / total) * 100);
+      pBar.style.width = pct + '%';
+      pLabel.textContent = `Importing... ${imported}/${total} airports (${pct}%)`;
+      logLine(`✓ Batch committed: ${slice.map(a => a.code).join(', ')}`);
+    }
+
+    pBar.style.width = '100%';
+    pLabel.textContent = `Done! ${imported} airports imported.`;
+    logLine(`\n✅ All ${imported} airports imported successfully!`);
+
+    statusOk.style.display = 'block';
+    document.getElementById('doneMsg').textContent =
+      `${imported} airports saved to Firestore (collection: managedIataAirportCodes). Open the Create Booking form — Origin and Destination dropdowns will now show all airports.`;
+
+  } catch (err) {
+    logLine('❌ ERROR: ' + err.message);
+    statusErr.style.display = 'block';
+    document.getElementById('errorMsg').textContent = err.message;
+    btn.disabled = false;
+  }
+};
+</script>
+
+</body>
+</html>
