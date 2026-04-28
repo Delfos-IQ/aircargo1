@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { collection, doc, query, where, getDocs, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, runTransaction, serverTimestamp, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase.js';
 import { useAppContext } from '../../context/AppContext.jsx';
 import {
@@ -512,19 +512,23 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
           currentUsedAwbs = a.usedAwbs || [];
         }
       });
-      if (!allocId) throw new Error('No valid AWB allocation found for this agent.');
-
-      await runTransaction(db, async (tx) => {
-        const awbUsageRef = doc(db, 'awbUsage', data.awb);
-        const awbUsageDoc = await tx.get(awbUsageRef);
-        if (awbUsageDoc.exists()) throw new Error(`AWB ${data.awb} has already been used.`);
-        const updatedUsed = [...currentUsedAwbs];
-        if (!updatedUsed.includes(data.awbInputNumber)) updatedUsed.push(data.awbInputNumber);
+      if (!allocId) {
+        // No AWB stock allocation found — create booking without stock tracking
         const newRef = doc(collection(db, 'bookings'));
-        tx.set(newRef, data);
-        tx.update(doc(db, 'awbStockAllocations', allocId), { usedAwbs: updatedUsed });
-        tx.set(awbUsageRef, { bookingId: newRef.id });
-      });
+        await setDoc(newRef, data);
+      } else {
+        await runTransaction(db, async (tx) => {
+          const awbUsageRef = doc(db, 'awbUsage', data.awb);
+          const awbUsageDoc = await tx.get(awbUsageRef);
+          if (awbUsageDoc.exists()) throw new Error(`AWB ${data.awb} has already been used.`);
+          const updatedUsed = [...currentUsedAwbs];
+          if (!updatedUsed.includes(data.awbInputNumber)) updatedUsed.push(data.awbInputNumber);
+          const newRef = doc(collection(db, 'bookings'));
+          tx.set(newRef, data);
+          tx.update(doc(db, 'awbStockAllocations', allocId), { usedAwbs: updatedUsed });
+          tx.set(awbUsageRef, { bookingId: newRef.id });
+        });
+      }
 
       toast.success('Booking created successfully.');
 
