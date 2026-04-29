@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { db } from '../../services/firebase.js';
+import { db, secondaryAuth } from '../../services/firebase.js';
 import { setDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { useFirestoreCollection } from '../../hooks/useFirestoreCollection.js';
 import { useAppContext } from '../../context/AppContext.jsx';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import toast from 'react-hot-toast';
 import Layout from '../../components/Layout.jsx';
 
@@ -41,8 +41,10 @@ export default function UsersPage() {
         toast.success('User updated');
       } else {
         if (!formData.email || !formData.password) { toast.error('Email and password are required'); setSaving(false); return; }
-        const authInstance = getAuth();
-        const credential = await createUserWithEmailAndPassword(authInstance, formData.email, formData.password);
+        // Use secondaryAuth so the admin session is NOT replaced by the new user
+        const credential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
+        // Sign out from secondary instance immediately — it's only used for creation
+        await signOut(secondaryAuth);
         // Document ID = Firebase UID — required for Firestore Security Rules
         await setDoc(doc(db, 'userProfiles', credential.user.uid), {
           uid:      credential.user.uid,

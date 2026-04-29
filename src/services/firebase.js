@@ -19,4 +19,10 @@ const app       = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
+
+// Secondary app instance used only for creating new users
+// without affecting the currently logged-in admin session.
+const secondaryApp  = initializeApp(firebaseConfig, 'secondary');
+export const secondaryAuth = getAuth(secondaryApp);
+
 export default app;
