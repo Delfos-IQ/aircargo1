@@ -114,10 +114,12 @@ export default function UsersPage() {
                       <td style={{ fontWeight: 500 }}>{u.username}</td>
                       <td>{u.email}</td>
                       <td>
-                        <span
-                          style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase',
-                            background: u.role === 'admin' ? 'var(--color-blue-100)' : 'var(--color-gray-100)',
-                            color: u.role === 'admin' ? 'var(--color-blue-800)' : 'var(--color-gray-600)' }}>
+                        <span style={{
+                            display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--radius-full)',
+                            fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase',
+                            background: u.role === 'admin' ? '#dbeafe' : u.role === 'operator' ? '#d1fae5' : '#f3f4f6',
+                            color:      u.role === 'admin' ? '#1e40af' : u.role === 'operator' ? '#065f46' : '#4b5563',
+                          }}>
                           {u.role || 'user'}
                         </span>
                       </td>
@@ -172,8 +174,9 @@ export default function UsersPage() {
                 <div className="form-group">
                   <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, display: 'block', marginBottom: 4 }}>Role *</label>
                   <select className="form-select" value={formData.role} onChange={e => handleChange('role', e.target.value)}>
-                    <option value="user">Agent (user)</option>
-                    <option value="admin">Admin</option>
+                    <option value="user">Agent — only own bookings</option>
+                    <option value="operator">Operator — all operations, no billing/users</option>
+                    <option value="admin">Admin — full access</option>
                   </select>
                 </div>
                 {formData.role !== 'admin' && (

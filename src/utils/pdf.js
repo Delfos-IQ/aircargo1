@@ -266,12 +266,46 @@ export const generateCargoSalesReportPdf = (reportBookings, dateFrom, dateTo, ag
     didDrawPage: (data) => {
       pdoc.setFontSize(8);
       pdoc.setTextColor(180, 180, 180);
-      pdoc.text('AcrossAviation', data.settings.margin.left, pdoc.internal.pageSize.height - 8);
+      pdoc.text('Across Aviation SLU', data.settings.margin.left, pdoc.internal.pageSize.height - 8);
       pdoc.text(`Page ${data.pageNumber}`, pageW - data.settings.margin.right, pdoc.internal.pageSize.height - 8, { align: 'right' });
     },
   });
 
   pdoc.save(`Cargo_Sales_Report_${dateFrom}_${dateTo}.pdf`);
+};
+
+/* ──────────────────────────────────────────────────────────────
+   VERIFACTU QR helper
+   Real Decreto 1007/2023 – generates a QR data URL using qrcodejs
+─────────────────────────────────────────────────────────────── */
+const buildVerifactuUrl = (nif, invoiceNum, dateStr, total) => {
+  // dateStr expected as DD/MM/YYYY → convert to DD-MM-YYYY
+  const fecha = dateStr.replace(/\//g, '-');
+  const importe = parseFloat(total).toFixed(2);
+  return `https://www2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=${nif}&numserie=${encodeURIComponent(invoiceNum)}&fecha=${fecha}&importe=${importe}`;
+};
+
+const getQrDataUrl = (text) => {
+  if (!window.QRCode) return null;
+  const container = document.createElement('div');
+  container.style.cssText = 'position:absolute;top:-9999px;left:-9999px;visibility:hidden;';
+  document.body.appendChild(container);
+  try {
+    new window.QRCode(container, {
+      text,
+      width: 160,
+      height: 160,
+      colorDark: '#000000',
+      colorLight: '#ffffff',
+      correctLevel: window.QRCode?.CorrectLevel?.M,
+    });
+    const canvas = container.querySelector('canvas');
+    return canvas ? canvas.toDataURL('image/png') : null;
+  } catch {
+    return null;
+  } finally {
+    document.body.removeChild(container);
+  }
 };
 
 /* ──────────────────────────────────────────────────────────────
@@ -294,7 +328,7 @@ export const generateInvoicePdf = (agent, bookings, dateFrom, dateTo) => {
   pdoc.setFontSize(9);
   pdoc.setFont('helvetica', 'normal');
   pdoc.setTextColor(55, 65, 81);
-  ['AcrossAviation SLU', 'Crta Castilnuevo 98', '19300 Molina de Aragon, Guadalajara', 'CIF: B-93644862'].forEach(line => {
+  ['Across Aviation SLU', 'C/Juan Díaz, 2 2ª Planta', '29015 Málaga, España', 'CIF: B93644862'].forEach(line => {
     pdoc.text(line, 20, y);
     y += 5;
   });
@@ -374,6 +408,29 @@ export const generateInvoicePdf = (agent, bookings, dateFrom, dateTo) => {
   pdoc.setFont('helvetica', 'normal');
   pdoc.setTextColor(107, 114, 128);
   pdoc.text('Payment due within 30 days. Thank you for your business.', 20, y);
+  y += 14;
+
+  // ── Verifactu QR (Real Decreto 1007/2023) ──────────────────
+  const COMPANY_NIF  = 'B93644862';                       // CIF without hyphen
+  const invoiceDate  = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
+  const verifactuUrl = buildVerifactuUrl(COMPANY_NIF, invNum, invoiceDate, grandTotal);
+  const qrImg        = getQrDataUrl(verifactuUrl);
+
+  const QR_SIZE = 28; // mm
+  if (qrImg) {
+    pdoc.addImage(qrImg, 'PNG', 20, y, QR_SIZE, QR_SIZE);
+    pdoc.setFontSize(7);
+    pdoc.setFont('helvetica', 'bold');
+    pdoc.setTextColor(55, 65, 81);
+    pdoc.text('Verifactu', 20 + QR_SIZE / 2, y + QR_SIZE + 3, { align: 'center' });
+    pdoc.setFont('helvetica', 'normal');
+    pdoc.setFontSize(6);
+    pdoc.setTextColor(107, 114, 128);
+    pdoc.text('Real Decreto 1007/2023', 20 + QR_SIZE / 2, y + QR_SIZE + 6.5, { align: 'center' });
+    // Also print the URL in tiny font so inspectors can verify manually
+    const urlLines = pdoc.splitTextToSize(verifactuUrl, pageW - 20 - (20 + QR_SIZE + 4));
+    pdoc.text(urlLines, 20 + QR_SIZE + 4, y + 4);
+  }
 
   pdoc.save(`Invoice_${(agent.agentName || 'Agent').replace(/\s+/g,'_')}_${dateFrom}_${dateTo}.pdf`);
 };

@@ -29,8 +29,9 @@ export const AppProvider = ({ children }) => {
   const { data: appSettings }       = useFirestoreCollection(enabled ? 'appSettings'             : null);
 
   // Role helpers — consumed by every page that needs to filter data
-  const isAdmin   = currentUserProfile?.role === 'admin';
-  const myAgentId = currentUserProfile?.agentId || null;
+  const isAdmin    = currentUserProfile?.role === 'admin';
+  const isOperator = currentUserProfile?.role === 'operator';
+  const myAgentId  = currentUserProfile?.agentId || null;
 
   // Global settings — default 70/30 split until Firestore doc is created
   const globalSettings = useMemo(() => {
@@ -50,6 +51,7 @@ export const AppProvider = ({ children }) => {
     logout,
     // Role helpers
     isAdmin,
+    isOperator,
     myAgentId,
     // Datos en tiempo real
     bookings,

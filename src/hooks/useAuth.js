@@ -36,12 +36,15 @@ export const useAuth = () => {
               const d = qSnap.docs[0];
               setCurrentUserProfile({ id: d.id, ...d.data() });
             } else {
-              // No profile found at all — minimal access
-              setCurrentUserProfile({ email: user.email, role: 'user' });
+              // No profile found — user was deleted from userProfiles, force logout
+              await signOut(auth);
+              return;
             }
           }
         } catch {
-          setCurrentUserProfile({ email: user.email, role: 'user' });
+          // On error, deny access to be safe
+          await signOut(auth);
+          return;
         }
         setCurrentUser(user);
       } else {

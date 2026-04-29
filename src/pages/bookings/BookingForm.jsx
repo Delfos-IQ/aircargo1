@@ -309,11 +309,13 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
       generateBookingConfirmationPdf(formAsBooking(), flightSchedules || [], iataAirportCodes || []);
     }
     // 2. Open mailto in email client
-    const params = new URLSearchParams();
-    if (emailForm.cc)      params.set('cc',      emailForm.cc);
-    if (emailForm.subject) params.set('subject', emailForm.subject);
-    if (emailForm.body)    params.set('body',    emailForm.body);
-    const mailto = `mailto:${encodeURIComponent(emailForm.to)}?${params.toString()}`;
+    // NOTE: URLSearchParams encodes spaces as '+' (form-urlencoded), but mailto: requires '%20'
+    const encode = (str) => encodeURIComponent(str).replace(/\+/g, '%20');
+    const parts = [];
+    if (emailForm.cc)      parts.push(`cc=${encode(emailForm.cc)}`);
+    if (emailForm.subject) parts.push(`subject=${encode(emailForm.subject)}`);
+    if (emailForm.body)    parts.push(`body=${encode(emailForm.body)}`);
+    const mailto = `mailto:${emailForm.to}${parts.length ? '?' + parts.join('&') : ''}`;
     window.location.href = mailto;
     toast.success('PDF downloaded — attach it to the email that just opened.');
     setShowEmailModal(false);
