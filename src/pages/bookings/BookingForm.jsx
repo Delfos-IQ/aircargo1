@@ -16,6 +16,123 @@ import { notifyBookingCreated, notifyAwbStockAlert, notifyBookingStatusChanged }
 import { generateFFRMessage } from '../../utils/ffr.js';
 import { generateBookingConfirmationPdf } from '../../utils/pdf.js';
 
+/* ─── Searchable agent dropdown ─── */
+function AgentSearchSelect({ agents = [], value, onChange, disabled }) {
+  const selected = agents.find(a => a.id === value);
+  const [query, setQuery]   = useState('');
+  const [open, setOpen]     = useState(false);
+  const ref = React.useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const sorted = useMemo(() =>
+    [...agents].sort((a, b) => (a.agentName || '').localeCompare(b.agentName || '')),
+  [agents]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? sorted.filter(a => a.agentName?.toLowerCase().includes(q)) : sorted;
+  }, [sorted, query]);
+
+  const handleSelect = (agent) => {
+    onChange(agent.id);
+    setQuery('');
+    setOpen(false);
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    onChange('');
+    setQuery('');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div
+        style={{
+          display: 'flex', alignItems: 'center',
+          border: `1px solid ${open ? 'var(--color-primary, #1e3a8a)' : 'var(--color-border)'}`,
+          borderRadius: 'var(--radius-md)', background: disabled ? 'var(--color-gray-50)' : 'var(--color-surface)',
+          boxShadow: open ? '0 0 0 2px rgba(30,58,138,0.15)' : 'none',
+          transition: 'border-color 150ms, box-shadow 150ms',
+          cursor: disabled ? 'not-allowed' : 'text',
+          overflow: 'hidden',
+        }}
+        onClick={() => !disabled && setOpen(true)}
+      >
+        {/* Search icon */}
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"
+          style={{ width: 15, height: 15, marginLeft: 10, flexShrink: 0, color: 'var(--color-gray-400)' }}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+        <input
+          type="text"
+          disabled={disabled}
+          placeholder={selected ? selected.agentName : 'Search agent…'}
+          value={open ? query : (selected ? selected.agentName : '')}
+          style={{
+            flex: 1, border: 'none', outline: 'none', padding: '8px 8px',
+            fontSize: 'var(--font-size-sm)', background: 'transparent',
+            color: open ? 'var(--color-gray-900)' : (selected ? 'var(--color-gray-900)' : 'var(--color-gray-400)'),
+            cursor: disabled ? 'not-allowed' : 'text',
+          }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => !disabled && setOpen(true)}
+        />
+        {selected && !disabled && (
+          <button type="button" onClick={handleClear}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 8px', color: 'var(--color-gray-400)', display: 'flex', alignItems: 'center' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" style={{ width: 14, height: 14 }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+          maxHeight: 260, overflowY: 'auto', marginTop: 4,
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 14px', fontSize: 'var(--font-size-sm)', color: 'var(--color-gray-400)' }}>
+              No agents found
+            </div>
+          ) : filtered.map(a => (
+            <div key={a.id}
+              onMouseDown={e => { e.preventDefault(); handleSelect(a); }}
+              style={{
+                padding: '9px 14px', cursor: 'pointer', fontSize: 'var(--font-size-sm)',
+                background: a.id === value ? 'var(--color-gray-100)' : 'transparent',
+                fontWeight: a.id === value ? 600 : 400,
+                color: 'var(--color-gray-900)',
+                borderBottom: '1px solid var(--color-gray-50)',
+              }}
+              onMouseOver={e => e.currentTarget.style.background = 'var(--color-gray-100)'}
+              onMouseOut={e => e.currentTarget.style.background = a.id === value ? 'var(--color-gray-100)' : 'transparent'}
+            >
+              {a.agentName}
+              {a.agentIataCassNumber && (
+                <span style={{ marginLeft: 8, fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
+                  {a.agentIataCassNumber}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Initial form state ─── */
 const INITIAL_FORM = {
   awbInputPrefix: '', awbInputNumber: '',
@@ -615,10 +732,11 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
             <div className="form-group">
               <label className="form-label required">Agent</label>
               {isAdmin ? (
-                <select className="form-select" value={form.selectedAgentProfileId} onChange={e => handleAgentSelect(e.target.value)}>
-                  <option value="">Select agent…</option>
-                  {(agentProfiles || []).map(a => <option key={a.id} value={a.id}>{a.agentName}</option>)}
-                </select>
+                <AgentSearchSelect
+                  agents={agentProfiles || []}
+                  value={form.selectedAgentProfileId}
+                  onChange={handleAgentSelect}
+                />
               ) : (
                 <input className="form-input" value={form.agentNameDisplay || '—'} readOnly
                   style={{ background: 'var(--color-gray-50)', color: 'var(--color-gray-600)' }} />
