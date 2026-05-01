@@ -45,7 +45,7 @@ export default {
       }
 
       const emailPayload = {
-        from: 'AcrossCargo <noreply@acrossaviation.com>',
+        from: 'AcrossCargo <noreply@acrosscargo.com>',
         to: [to],
         cc: cc ? [cc] : undefined,
         subject,

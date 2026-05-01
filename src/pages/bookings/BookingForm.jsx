@@ -241,10 +241,11 @@ export default function BookingForm({ onSuccess, editingBooking = null }) {
     setDisplayVolumeM3(vol.toFixed(3));
     setDisplayChargeableWeightKg(chg.toFixed(1));
 
-    const rateTable = rateTableEntries?.filter(r => r.agentProfileId === form.selectedAgentProfileId) || [];
-    const rateResult = form.isRateOverridden
+    const rateTable   = rateTableEntries?.filter(r => r.agentProfileId === form.selectedAgentProfileId) || [];
+    const carrierCode = form.flightSegments?.[0]?.carrierCode || '';
+    const rateResult  = form.isRateOverridden
       ? null
-      : getRateForBooking(form.origin, form.destination, form.currency, chg, rateTable);
+      : getRateForBooking(form.origin, form.destination, form.currency, chg, rateTable, carrierCode);
     // getRateForBooking returns { rate, minCharge } or null — extract the numeric rate safely
     const rate = form.isRateOverridden
       ? parseFloat(form.ratePerKg) || 0

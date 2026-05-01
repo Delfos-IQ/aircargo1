@@ -3,6 +3,7 @@ import CrudPage from '../../components/CrudPage.jsx';
 import Layout from '../../components/Layout.jsx';
 
 const FIELDS = [
+  { key: 'airlineCode', label: 'Airline', transform: v => v.toUpperCase(), maxLength: 3, placeholder: 'IB, TP, AV…' },
   { key: 'origin', label: 'Origin', required: true, transform: v => v.toUpperCase(), maxLength: 3 },
   { key: 'dest', label: 'Destination', required: true, transform: v => v.toUpperCase(), maxLength: 3 },
   { key: 'currency', label: 'Currency', required: true, transform: v => v.toUpperCase(), maxLength: 3, placeholder: 'EUR' },
@@ -17,6 +18,7 @@ const FIELDS = [
 ];
 
 const COLUMNS = [
+  { label: 'Airline', render: item => item.airlineCode || '—' },
   { label: 'Route', render: item => `${item.origin || ''}→${item.dest || ''}` },
   { label: 'Currency', key: 'currency' },
   { label: 'Min', key: 'minCharge' },
@@ -33,13 +35,13 @@ export default function RatesPage() {
       <CrudPage
         title="Rate Table"
         collectionName="rateTableEntries"
-        initialFormData={{ origin: '', dest: '', currency: 'EUR', minCharge: '', srN: '', srQ100: '', srQ300: '', srQ500: '', srQ1000: '', srQ3000: '', remarks: '' }}
+        initialFormData={{ airlineCode: '', origin: '', dest: '', currency: 'EUR', minCharge: '', srN: '', srQ100: '', srQ300: '', srQ500: '', srQ1000: '', srQ3000: '', remarks: '' }}
         fields={FIELDS}
         listColumns={COLUMNS}
-        searchKeys={['origin', 'dest', 'remarks']}
+        searchKeys={['airlineCode', 'origin', 'dest', 'remarks']}
         sortFn={(a, b) => {
-          const ra = `${a.origin}${a.dest}`;
-          const rb = `${b.origin}${b.dest}`;
+          const ra = `${a.airlineCode || ''}${a.origin}${a.dest}`;
+          const rb = `${b.airlineCode || ''}${b.origin}${b.dest}`;
           return ra.localeCompare(rb);
         }}
       />

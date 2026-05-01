@@ -28,13 +28,28 @@ export const calculateChargeableWeight = (actualWeightStr, dimensionLines) => {
   return Math.max(actualWeight, totalVolumetric).toFixed(1);
 };
 
-/** Busca la tarifa aplicable en la tabla de tarifas para un booking dado. */
-export const getRateForBooking = (origin, destination, currency, chargeableWeightKg, rateTable) => {
-  const rateEntry = rateTable.find(r =>
-    r.origin?.toUpperCase()   === origin.toUpperCase()   &&
+/** Busca la tarifa aplicable en la tabla de tarifas para un booking dado.
+ *  Si se pasa airlineCode, prioriza entradas que coincidan con esa aerolínea.
+ *  Fallback 1: entradas genéricas sin airlineCode para esa ruta.
+ *  Fallback 2: cualquier entrada de esa ruta (compatibilidad con registros antiguos).
+ */
+export const getRateForBooking = (origin, destination, currency, chargeableWeightKg, rateTable, airlineCode = '') => {
+  const matchRoute = r =>
+    r.origin?.toUpperCase()   === origin.toUpperCase()      &&
     r.dest?.toUpperCase()     === destination.toUpperCase() &&
-    r.currency?.toUpperCase() === currency.toUpperCase()
-  );
+    r.currency?.toUpperCase() === currency.toUpperCase();
+
+  // 1. Coincidencia exacta: ruta + aerolínea
+  let rateEntry = airlineCode
+    ? rateTable.find(r => matchRoute(r) && r.airlineCode?.toUpperCase() === airlineCode.toUpperCase())
+    : null;
+
+  // 2. Fallback: tarifa genérica (sin airlineCode) para la misma ruta
+  if (!rateEntry) rateEntry = rateTable.find(r => matchRoute(r) && !r.airlineCode);
+
+  // 3. Último recurso: cualquier entrada para esa ruta
+  if (!rateEntry) rateEntry = rateTable.find(r => matchRoute(r));
+
   if (!rateEntry) return null;
 
   const cw = chargeableWeightKg;
