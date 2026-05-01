@@ -33,10 +33,12 @@ jobs:
           VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_MEASUREMENT_ID:      ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Write service account credentials
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: echo "$SA_JSON" > /tmp/gsa.json
 
       - name: Deploy to Firebase Hosting
         run: npx firebase-tools@15 deploy --only hosting --project gssa-cargo-v2
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gsa.json
