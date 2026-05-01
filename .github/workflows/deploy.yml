@@ -42,3 +42,8 @@ jobs:
         run: npx firebase-tools@15 deploy --only hosting --project gssa-cargo-v2-471e0 --non-interactive
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/gsa.json
+
+      - name: Deploy Firestore Rules
+        run: npx firebase-tools@15 deploy --only firestore:rules --project gssa-cargo-v2-471e0 --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gsa.json
