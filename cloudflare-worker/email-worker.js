@@ -10,6 +10,7 @@
  * {
  *   to:          string,           // recipient email (required)
  *   cc?:         string,           // CC email (optional)
+ *   replyTo?:    string,           // Reply-To address (optional)
  *   subject:     string,           // email subject (required)
  *   body?:       string,           // plain-text body
  *   pdfBase64?:  string,           // PDF as base64 string (no data URI prefix)
@@ -43,7 +44,7 @@ export default {
     }
 
     try {
-      const { to, cc, subject, body, pdfBase64, pdfFilename } = await request.json();
+      const { to, cc, replyTo, subject, body, pdfBase64, pdfFilename } = await request.json();
 
       if (!to || !subject) {
         return new Response(
@@ -55,7 +56,8 @@ export default {
       const emailPayload = {
         from: 'AcrossCargo <noreply@acrosscargo.com>',
         to: [to],
-        cc: cc ? [cc] : undefined,
+        cc:       cc      ? [cc]      : undefined,
+        reply_to: replyTo ? replyTo   : undefined,
         subject,
         text: body || '',
         attachments: pdfBase64

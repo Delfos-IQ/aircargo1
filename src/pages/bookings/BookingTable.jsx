@@ -365,6 +365,7 @@ export default function BookingTable({ onEdit }) {
         body: JSON.stringify({
           to:          fblEmailForm.to,
           cc:          fblEmailForm.cc || undefined,
+          replyTo:     'bookings@acrosscargo.com',
           subject:     fblEmailForm.subject,
           body:        fblEmailForm.body,
           pdfBase64:   result.base64,
@@ -808,7 +809,7 @@ export default function BookingTable({ onEdit }) {
                   onChange={e => setFblEmailForm(f => ({ ...f, body: e.target.value }))} />
               </div>
               <p style={{ fontSize: '0.75rem', color: 'var(--color-gray-400)', margin: 0 }}>
-                The FBL PDF is generated and attached automatically.
+                Sent from <strong>noreply@acrosscargo.com</strong> · Carrier replies will go to <strong>bookings@acrosscargo.com</strong>
               </p>
             </div>
             {/* Footer */}
